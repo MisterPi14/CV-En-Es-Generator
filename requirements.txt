@@ -1,0 +1,5 @@
+PyYAML
+Jinja2
+playwright
+# (Opcional) WeasyPrint si quieres volver al motor original:
+# WeasyPrint

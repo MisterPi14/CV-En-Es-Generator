@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ personal_info.name }} - {{ personal_info.title }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="static/style.css" />
+</head>
+<body>
+  <header class="cv-header">
+    <h1 class="name">{{ personal_info.name }}</h1>
+    <p class="title">{{ personal_info.title }}</p>
+    <p class="contact">
+      <span>{{ personal_info.email }}</span> ·
+      <a href="{{ personal_info.linkedin_url }}" target="_blank">LinkedIn</a> ·
+      <a href="{{ personal_info.github_url }}" target="_blank">GitHub</a>
+    </p>
+  </header>
+
+  <section class="summary">
+    <h2>{{ ui.section_summary }}</h2>
+    <p>{{ summary | replace('\n', '<br>') | safe }}</p>
+  </section>
+
+  <section class="experience">
+    <h2>{{ ui.section_experience }}</h2>
+    {% for job in experience %}
+    <div class="job">
+      <div class="job-header">
+        <div class="role">{{ job.title }}</div>
+        <div class="company-period">{{ job.company }} · <span class="period">{{ job.period }}</span></div>
+      </div>
+      <ul class="job-desc">
+        {% for line in job.description.strip().split('\n') %}
+          {% if line %}<li>{{ line }}</li>{% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="education">
+    <h2>{{ ui.section_education }}</h2>
+    {% for edu in education %}
+    <div class="edu-item">
+      <div class="degree">{{ edu.degree }}</div>
+      <div class="institution-period">{{ edu.institution }} · <span class="period">{{ edu.period }}</span></div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="skills">
+    <h2>{{ ui.section_skills }}</h2>
+    <ul class="skills-list">
+      {% for skill in skills %}
+      <li>{{ skill }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+</body>
+</html>
