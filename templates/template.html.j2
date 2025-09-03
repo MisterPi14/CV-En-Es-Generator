@@ -1,63 +1,119 @@
 <!DOCTYPE html>
 <html lang="{{ lang }}">
 <head>
-  <meta charset="UTF-8" />
-  <title>{{ personal_info.name }} - {{ personal_info.title }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="static/style.css" />
+  <meta charset="UTF-8">
+  <title>CV - {{ personal.name if lang=='es' else personal.name_en }}</title>
+  <link rel="stylesheet" href="static/style.css">
 </head>
 <body>
-  <header class="cv-header">
-    <h1 class="name">{{ personal_info.name }}</h1>
-    <p class="title">{{ personal_info.title }}</p>
-    <p class="contact">
-      <span>{{ personal_info.email }}</span> ·
-      <a href="{{ personal_info.linkedin_url }}" target="_blank">LinkedIn</a> ·
-      <a href="{{ personal_info.github_url }}" target="_blank">GitHub</a>
-    </p>
+  <header>
+    <h1>{{ personal.name }}</h1>
+    <div class="contacto">
+      <span class="emoji">📞</span> <a href="tel:{{ personal.phone | replace(' ', '') }}">{{ personal.phone }}</a> | 
+      <span class="emoji">📧</span> <a href="mailto:{{ personal.email }}">{{ personal.email }}</a> | 
+      <span class="emoji"><img src="https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png" class="icon" alt="LinkedIn"></span> <a href="{{ personal.linkedin_url }}" target="_blank">LinkedIn</a> | 
+      <span class="emoji"><img src="https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg" class="icon" alt="GitHub"></span> <a href="{{ personal.github_url }}" target="_blank">GitHub</a>
+    </div>
   </header>
 
-  <section class="summary">
-    <h2>{{ ui.section_summary }}</h2>
-    <p>{{ summary | replace('\n', '<br>') | safe }}</p>
-  </section>
-
-  <section class="experience">
-    <h2>{{ ui.section_experience }}</h2>
-    {% for job in experience %}
-    <div class="job">
-      <div class="job-header">
-        <div class="role">{{ job.title }}</div>
-        <div class="company-period">{{ job.company }} · <span class="period">{{ job.period }}</span></div>
-      </div>
-      <ul class="job-desc">
-        {% for line in job.description.strip().split('\n') %}
-          {% if line %}<li>{{ line }}</li>{% endif %}
-        {% endfor %}
-      </ul>
-    </div>
-    {% endfor %}
-  </section>
-
-  <section class="education">
-    <h2>{{ ui.section_education }}</h2>
+  <section>
+  <h2><span class="emoji">🎓</span> {{ labels[lang].education }}</h2>
     {% for edu in education %}
-    <div class="edu-item">
-      <div class="degree">{{ edu.degree }}</div>
-      <div class="institution-period">{{ edu.institution }} · <span class="period">{{ edu.period }}</span></div>
+    <div class="edu-row">
+      <div class="edu-left">
+        <p class="titulo">{{ edu.title if lang=='es' else edu.title_en }} | <a href="{{ edu.oferta_url }}" target="_blank">{{ labels[lang].oferta }}</a><br>{{ labels[lang].promedio }}: <span class="highlight">{{ edu.promedio }}</span></p>
+        <p class="subtitulo">
+          <a href="{{ edu.institution_url }}" target="_blank">{{ edu.institution if lang=='es' else edu.institution_en }}</a> ({{ edu.period if lang=='es' else edu.period_en }})
+        </p>
+      </div>
+      <div class="edu-right">
+        <ul>
+          <li>
+            <a href="{{ edu.mapa_url }}" target="_blank" class="mapa-curricular">
+              {{ labels[lang].relevant_courses }}: {{ (edu.materias if lang=='es' else (edu.materias_en if edu.materias_en is defined else edu.materias)) | join(', ') }}.
+            </a>
+          </li>
+          {% if edu.actividades and lang=='es' or (edu.actividades and lang=='en') %}
+          <li>{{ labels[lang].actividades }}:
+            <ul>
+              {% for act in edu.actividades %}<li>{{ act if lang=='es' else act }}</li>{% endfor %}
+            </ul>
+          </li>
+          {% endif %}
+          {% if edu.proyecto %}
+          <li>{{ labels[lang].proyecto }}:
+            <ul>
+              <li>{{ edu.proyecto if lang=='es' else (edu.proyecto_en if edu.proyecto_en is defined else edu.proyecto) }}</li>
+            </ul>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
     </div>
     {% endfor %}
   </section>
 
-  <section class="skills">
-    <h2>{{ ui.section_skills }}</h2>
-    <ul class="skills-list">
-      {% for skill in skills %}
-      <li>{{ skill }}</li>
-      {% endfor %}
+  <section>
+  <h2><span class="emoji">💼</span> {{ labels[lang].experience }}</h2>
+    {% for job in experience %}
+    <p class="titulo"><a href="{{ job.company_url }}" target="_blank">{{ job.company }}</a> – {{ job.role if lang=='es' else job.role_en }}</p>
+    <p class="subtitulo">{{ job.location if lang=='es' else job.location_en }}</p>
+    <ul>
+      {% for b in (job.bullets if lang=='es' else (job.bullets_en if job.bullets_en is defined else job.bullets)) %}<li>{{ b }}</li>{% endfor %}
+    </ul>
+    {% endfor %}
+  </section>
+
+  <section>
+  <h2><span class="emoji">🛠️</span> {{ labels[lang].projects }}</h2>
+    {% for p in projects %}
+    <p class="titulo"><a href="{{ p.url }}" target="_blank">{{ p.name if lang=='es' else p.name_en }} – {{ p.date if lang=='es' else p.date_en }}</a></p>
+    <ul>
+      {% for b in (p.bullets if lang=='es' else (p.bullets_en if p.bullets_en is defined else p.bullets)) %}<li>{{ b }}</li>{% endfor %}
+    </ul>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2><span class="emoji">🤝</span> {{ labels[lang].teamwork }}</h2>
+    <p>{{ teamwork.description if lang=='es' else teamwork.description_en }}</p>
+    <ul>
+      {% for b in (teamwork.bullets if lang=='es' else (teamwork.bullets_en if teamwork.bullets_en is defined else teamwork.bullets)) %}<li>{{ b }}</li>{% endfor %}
     </ul>
   </section>
+
+  <section>
+    <div class="flex">
+      <div class="col">
+        <h3>{{ labels[lang].languages_prog }}</h3>
+        <ul>
+          {% for l in (skills.lenguajes_programacion if lang=='es' else (skills.lenguajes_programacion_en if skills.lenguajes_programacion_en is defined else skills.lenguajes_programacion)) %}<li>{{ l }}</li>{% endfor %}
+        </ul>
+        <h3>{{ labels[lang].technologies }}</h3>
+        <ul>
+          {% for t in (skills.tecnologias if lang=='es' else (skills.tecnologias_en if skills.tecnologias_en is defined else skills.tecnologias)) %}<li>{{ t }}</li>{% endfor %}
+        </ul>
+      </div>
+      <div class="col cert">
+        <h3>{{ labels[lang].certifications }}</h3>
+        {% for c in certifications %}
+        <div class="cert-item">
+          <div class="cert-icons">
+            {% for ic in c.icons %}<img src="{{ ic }}" class="icon">{% endfor %}
+          </div>
+          <div class="cert-text">
+            <a href="{{ c.link }}" target="_blank">{{ c.text }}</a>
+            {% if c.subitems %}
+            <ul>
+              {% for si in c.subitems %}<li><a href="{{ si.url }}" target="_blank">{{ si.text }}</a></li>{% endfor %}
+            </ul>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
 </body>
 </html>

@@ -67,27 +67,14 @@ STATIC_DIR = BASE_DIR / "static"
 CV_FILE = BASE_DIR / "cv.yaml"
 OUTPUT_PREFIX = "cv_"
 
-UI_STRINGS = {
-    "es": {
-        "section_summary": "Resumen Profesional",
-        "section_experience": "Experiencia Profesional",
-        "section_education": "Educación",
-        "section_skills": "Habilidades"
-    },
-    "en": {
-        "section_summary": "Professional Summary",
-        "section_experience": "Work Experience",
-        "section_education": "Education",
-        "section_skills": "Skills"
-    }
-}
+# Eliminado UI_STRINGS: estructura ahora fija basada en template similar a code.html
 
 def load_cv_data():
     with CV_FILE.open('r', encoding='utf-8') as f:
         data = yaml.safe_load(f)
     return data
 
-def render_to_pdf(data: dict, lang: str):
+def render_to_pdf(data: dict, lang: str = "es"):
     """Renderiza el CV a PDF (si WeasyPrint funciona) o genera fallback HTML.
 
     Si WeasyPrint no está disponible (falta libgobject/pango en Windows u otra dependencia),
@@ -99,11 +86,7 @@ def render_to_pdf(data: dict, lang: str):
     )
     template = env.get_template('template.html.j2')
 
-    html_content = template.render(
-        lang=lang,
-        ui=UI_STRINGS[lang],
-        **data
-    )
+    html_content = template.render(lang=lang, **data)
 
     output_file = BASE_DIR / f"{OUTPUT_PREFIX}{lang}.pdf"
 
@@ -132,13 +115,9 @@ def render_to_pdf(data: dict, lang: str):
 def main():
     data = load_cv_data()
 
+    # Generar versiones español e inglés (mismo formato)
     for lang in ["es", "en"]:
-        if lang == "es":
-            data_lang = data
-        else:
-            # TODO: Implement translation logic here
-            data_lang = data
-        render_to_pdf(data_lang, lang)
+        render_to_pdf(data, lang)
 
 if __name__ == "__main__":
     try:

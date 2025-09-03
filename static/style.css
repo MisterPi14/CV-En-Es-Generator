@@ -1,82 +1,46 @@
-/* Global styles */
-:root {
-  --accent: #1f3b57;
-  --text: #222;
-  --muted: #555;
-  --bg: #fff;
-  --border: #d0d7de;
-}
-
-html, body {
-  padding: 0;
-  margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 12px; /* Good baseline for PDF scaling */
-  line-height: 1.4;
-}
-
 body {
-  max-width: 8.27in; /* A4 width */
-  padding: 20px 40px 32px 40px;
-  margin: 0 auto;
-  box-sizing: border-box;
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: #fff;
+  color: #222;
+  line-height: 1.5;
+  font-size: 12px;
 }
 
-h1, h2, h3 { margin: 0; font-weight: 600; }
+a { color: inherit; text-decoration: underline; }
 
-h1.name { font-size: 30px; letter-spacing: .5px; }
-.title { font-size: 16px; font-weight: 500; margin-top: 4px; }
-.contact { font-size: 11px; color: var(--muted); margin-top: 6px; }
-.contact a { color: var(--accent); text-decoration: none; }
-.contact a:hover { text-decoration: underline; }
+header { text-align: center; padding: 20px; background: #000; color: #fff; }
+header h1 { margin: 0; font-size: 28px; }
+.contacto { margin-top: 10px; font-size: 12px; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:10px; }
 
-section { margin-top: 18px; }
-section h2 {
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--accent);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 4px;
-  margin-bottom: 10px;
-}
+section { padding: 20px; border-bottom: 1px solid #ddd; }
+section h2 { background:#000; color:#fff; padding:6px 10px; font-size:16px; margin-bottom:15px; text-transform:uppercase; display:flex; align-items:center; gap:10px; }
 
-.summary p { margin: 0; text-align: justify; }
+.edu-row { display:flex; justify-content:space-between; margin-bottom:25px; padding-bottom:15px; border-bottom:2px solid #eee; }
+.edu-left { flex:1; padding-right:20px; }
+.edu-left p { margin:6px 0; }
+.edu-right { flex:1.2; padding-left:20px; border-left:2px solid #ddd; }
+.edu-right ul { margin:5px 0 10px 20px; }
+.edu-right li { margin-bottom:6px; font-size:11px; }
+.highlight { color:#0af; font-weight:bold; }
 
-.job { margin-bottom: 14px; }
-.job-header { display: flex; flex-direction: column; }
-.role { font-size: 13px; font-weight: 600; }
-.company-period { font-size: 11px; color: var(--muted); margin-top: 2px; }
-.period { font-style: italic; }
+.titulo { font-weight:bold; font-size:13px; }
+.subtitulo { font-style:italic; font-size:11px; color:#444; }
+ul { margin:5px 0 15px 20px; }
 
-.job-desc { margin: 6px 0 0 14px; padding: 0; }
-.job-desc li { margin-bottom: 4px; }
-.job-desc li:last-child { margin-bottom: 0; }
+.flex { display:flex; gap:20px; }
+.col { flex:1; }
+.col h3 { margin-top:0; font-size:14px; text-transform:uppercase; border-bottom:1px solid #000; padding-bottom:4px; }
 
-.edu-item { margin-bottom: 10px; }
-.degree { font-size: 13px; font-weight: 600; }
-.institution-period { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.cert { background:#f7f7f7; padding:10px; border-radius:6px; }
+.cert-item { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+.cert-icons { display:flex; align-items:center; justify-content:center; gap:8px; }
+.cert-icons img { width:40px; height:40px; object-fit:contain; }
+.cert-text { flex:1; }
 
-.skills-list { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; }
-.skills-list li {
-  background: #eef3f8;
-  border: 1px solid #d6e2ec;
-  color: #1a2f44;
-  padding: 2px 8px;
-  margin: 0 6px 6px 0;
-  font-size: 11px;
-  border-radius: 4px;
-}
+.icon { width:40px; height:40px; vertical-align:middle; margin-right:6px; object-fit:contain; }
+.emoji { font-size:40px; display:inline-block; width:40px; height:40px; line-height:40px; text-align:center; }
 
-/* Print adjustments for WeasyPrint */
-@page {
-  size: A4;
-  margin: 1.2cm 1.3cm 1.2cm 1.3cm;
-}
-
-@media print {
-  body { box-shadow: none; }
-  a { color: inherit; }
-}
+@page { size:A4; margin:1.2cm 1.3cm; }
+@media print { a { color:inherit; } }
