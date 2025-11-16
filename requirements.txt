@@ -1,5 +1,5 @@
-PyYAML
-Jinja2
-playwright
-# (Opcional) WeasyPrint si quieres volver al motor original:
-# WeasyPrint
+pdfplumber==0.11.0
+ollama==0.3.3
+typer==0.12.3
+rich==13.7.1
+pydantic==2.12.4

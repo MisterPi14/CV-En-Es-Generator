@@ -1,0 +1,1 @@
+. ~/.python-envs/cvTranslator2/Scripts/activate
