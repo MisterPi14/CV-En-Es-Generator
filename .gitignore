@@ -21,11 +21,15 @@ env/
 .DS_Store
 Thumbs.db
 
-# Project specific
-*.pdf
-*_structured.json
-*_translated.json
+# Project specific - Generated files
 resumes_loaded/
+*_structured.json
+*_english.json
+*_spanish.json
+*_french.json
+*_german.json
+*.pdf
+!templates/**/*.pdf
 
 # Logs
 *.log

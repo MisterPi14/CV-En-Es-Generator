@@ -4,7 +4,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.prompt import Prompt, Confirm
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn
 
 from pdf_extractor import extract_text_from_pdf
 from ollama_client import list_available_models, structure_cv_with_llm, translate_cv
@@ -16,13 +16,38 @@ console = Console()
 
 @app.command()
 def translate(
-    target_lang: str = typer.Option("english", "--lang", "-l", help="Idioma destino (ej: english, spanish, french)"),
     output_format: str = typer.Option("json", "--format", "-f", help="Formato de salida (json, pdf)"),
     model: str = typer.Option(None, "--model", "-m", help="Modelo de Ollama a usar"),
     template_type: str = typer.Option(None, "--template", "-t", help="Tipo de plantilla (html, word)"),
     template_name: str = typer.Option(None, "--template-name", "-tn", help="Nombre de la plantilla específica")
 ):
     """Traduce un currículum vitae desde JSON al idioma especificado."""
+    
+    # Seleccionar idioma
+    available_languages = ["english", "spanish", "french"]
+    
+    table = Table(title="Idiomas Disponibles")
+    table.add_column("Nº", style="cyan")
+    table.add_column("Idioma", style="green")
+    
+    for idx, lang in enumerate(available_languages, 1):
+        table.add_row(str(idx), lang.capitalize())
+    
+    console.print("\n")
+    console.print(table)
+    
+    lang_selection = Prompt.ask(
+        "\n[yellow]Selecciona el número del idioma destino[/yellow]",
+        default="1"
+    )
+    
+    try:
+        target_lang = available_languages[int(lang_selection) - 1]
+    except (ValueError, IndexError):
+        console.print("[red]Selección inválida[/red]")
+        raise typer.Exit(1)
+    
+    console.print(f"[green]✓ Idioma seleccionado: {target_lang.capitalize()}[/green]")
     
     # Listar CVs disponibles en resumes_loaded
     resumes_dir = Path("resumes_loaded")
@@ -156,14 +181,25 @@ def translate(
     #     console.print("[green]✓ CV estructurado correctamente[/green]")
     
     # Traducir CV
+    from rich.progress import BarColumn, TimeRemainingColumn
+    
+    # Calcular total de elementos a traducir
+    total_items = 1  # summary
+    total_items += len(cv_data.get('experience', [])) * 2  # title + description
+    total_items += len(cv_data.get('education', []))  # degree
+    total_items += len(cv_data.get('skills', []))  # cada skill
+    total_items += len(cv_data.get('languages', []))  # cada language
+    
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TimeRemainingColumn(),
         console=console
     ) as progress:
-        task = progress.add_task(f"[cyan]Traduciendo CV a {target_lang}...", total=None)
-        translated_cv = translate_cv(cv_data, target_lang, selected_model)
-        progress.update(task, completed=True)
+        task = progress.add_task(f"[cyan]Traduciendo CV a {target_lang}...", total=total_items)
+        translated_cv = translate_cv(cv_data, target_lang, selected_model, progress, task)
     
     console.print(f"[green]✓ CV traducido a {target_lang}[/green]")
     

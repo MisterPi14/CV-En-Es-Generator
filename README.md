@@ -1,6 +1,6 @@
 # CV Translator - Traductor de Currículums con IA Local
 
-Herramienta para extraer, estructurar y traducir currículums vitae en PDF usando modelos de lenguaje locales con Ollama.
+Herramienta para capturar, estructurar y traducir currículums vitae usando modelos de lenguaje locales con Ollama.
 
 ## Requisitos Previos
 
@@ -39,39 +39,41 @@ El CV se guardará automáticamente en formato JSON.
 python main.py models
 ```
 
-### 3. Extraer y estructurar un CV desde PDF (sin traducir)
+### 3. Traducir un CV
 
 ```bash
-python main.py extract mi_cv.pdf
+python main.py translate --lang english
 ```
 
-Esto generará un archivo `mi_cv_structured.json` con el CV estructurado.
-
-### 4. Traducir un CV
-
-```bash
-python main.py translate mi_cv.pdf --lang spanish
-```
+El comando mostrará una lista de CVs disponibles en `resumes_loaded/` para que selecciones cuál traducir.
 
 Opciones:
 - `--lang` o `-l`: Idioma destino (english, spanish, french, german, etc.)
 - `--model` o `-m`: Modelo específico de Ollama a usar
 - `--format` o `-f`: Formato de salida (json, pdf)
-- `--template` o `-t`: Tipo de plantilla (html, word)
+- `--template` o `-t`: Tipo de plantilla (html, word) - solo para formato PDF
 - `--template-name` o `-tn`: Nombre de plantilla específica
 
 Ejemplos:
 
 ```bash
-# Traducir a inglés (JSON)
-python main.py translate mi_cv.pdf --lang english
+# Traducir a inglés (JSON) - selección interactiva
+python main.py translate --lang english
 
 # Traducir a francés y generar PDF con plantilla HTML
-python main.py translate mi_cv.pdf --lang french --format pdf --template html
+python main.py translate --lang french --format pdf --template html
 
 # Traducir a alemán usando plantilla Word específica
-python main.py translate mi_cv.pdf --lang german --format pdf --template word --template-name mi_plantilla
+python main.py translate --lang german --format pdf --template word --template-name sample
 ```
+
+### 4. Extraer y estructurar un CV desde PDF (sin traducir)
+
+```bash
+python main.py extract mi_cv.pdf
+```
+
+**Nota**: Este comando usa IA para estructurar el PDF. Se recomienda usar `import-cv` en su lugar para mayor precisión.
 
 ### 5. Ver plantillas disponibles
 
@@ -84,15 +86,18 @@ python main.py templates
 ```
 CvTranslator/
 ├── main.py                 # Script principal con CLI
-├── pdf_extractor.py        # Extracción de texto de PDFs
+├── cv_importer.py          # Formulario interactivo para importar CVs
+├── pdf_extractor.py        # Extracción de texto de PDFs (legacy)
 ├── ollama_client.py        # Cliente para comunicación con Ollama
-├── cv_structure.py         # Modelos de datos del CV
+├── cv_structure.py         # Modelos de datos del CV (Pydantic)
 ├── pdf_generator.py        # Generación de PDFs con plantillas
+├── resumes_loaded/         # CVs importados (JSON)
 ├── templates/              # Plantillas para PDFs
 │   ├── html/              # Plantillas HTML
 │   │   ├── modern.html    # Plantilla moderna
 │   │   └── classic.html   # Plantilla clásica
 │   └── word/              # Plantillas Word
+│       ├── sample.docx    # Plantilla de ejemplo
 │       └── README.md      # Instrucciones para crear plantillas
 ├── requirements.txt        # Dependencias
 └── README.md              # Este archivo
@@ -159,7 +164,24 @@ Puedes crear tus propias plantillas Word:
 3. Guárdalo en `templates/word/`
 4. Consulta `templates/word/README.md` para la lista completa de marcadores
 
+## Flujo de Trabajo Recomendado
+
+1. **Importar CV**: `python main.py import-cv`
+   - Completa el formulario interactivo
+   - El CV se guarda en `resumes_loaded/`
+
+2. **Editar JSON** (opcional): Abre el archivo JSON y ajusta cualquier dato
+
+3. **Traducir**: `python main.py translate --lang english --format pdf`
+   - Selecciona el CV de la lista
+   - Elige modelo y plantilla
+   - Obtén tu CV traducido
+
 ## Solución de Problemas
+
+### No se encuentran CVs para traducir
+- Asegúrate de haber importado al menos un CV con `python main.py import-cv`
+- Verifica que exista la carpeta `resumes_loaded/` con archivos JSON
 
 ### No se encuentran plantillas
 - Verifica que existan archivos en `templates/html/` o `templates/word/`

@@ -1,0 +1,238 @@
+# CV TRANSLATOR - PURPOSE & CONTEXT
+
+## OBJETIVO PRINCIPAL
+Herramienta para traducir currículums vitae a diferentes idiomas usando modelos de lenguaje locales (Ollama), manteniendo el formato profesional mediante plantillas.
+
+## FLUJO ACTUAL DE LA APLICACIÓN
+
+### 1. EXTRACCIÓN (pdf_extractor.py)
+- Lee archivos PDF usando pdfplumber
+- Extrae texto plano sin estructura
+- Retorna string con todo el contenido del CV
+
+### 2. ESTRUCTURACIÓN (ollama_client.py - structure_cv_with_llm)
+**ESTADO ACTUAL**: Usa IA para estructurar
+**PROBLEMA IDENTIFICADO**: La IA no debería estructurar, esto debe ser automático por código
+**RAZÓN**: Los PDFs no tienen estructura semántica consistente, cada CV tiene formato diferente
+
+Estructura JSON objetivo:
+```json
+{
+  "personal_info": {
+    "name": "string",
+    "email": "string",
+    "phone": "string",
+    "location": "string",
+    "linkedin": "string"
+  },
+  "summary": "string",
+  "experience": [
+    {
+      "title": "string",
+      "company": "string",
+      "duration": "string",
+      "description": "string"
+    }
+  ],
+  "education": [
+    {
+      "degree": "string",
+      "institution": "string",
+      "year": "string"
+    }
+  ],
+  "skills": ["string"],
+  "languages": ["string"],
+  "certifications": ["string"]
+}
+```
+
+### 3. TRADUCCIÓN (ollama_client.py - translate_cv)
+- Recibe JSON estructurado
+- Usa modelo LLM local para traducir contenido al idioma objetivo
+- Mantiene estructura JSON intacta
+- NO traduce: nombres propios, emails, teléfonos, URLs
+- Retorna JSON con contenido traducido
+
+### 4. GENERACIÓN DE PDF (pdf_generator.py)
+Soporta dos tipos de plantillas:
+
+#### A. Plantillas HTML (templates/html/)
+- modern.html: Diseño moderno con colores y etiquetas
+- classic.html: Diseño clásico estilo académico
+- Usa Jinja2 para renderizar datos en HTML
+- Convierte HTML a PDF con WeasyPrint
+
+#### B. Plantillas Word (templates/word/)
+- Usuario crea archivo .docx con marcadores {{variable}}
+- Marcadores disponibles: {{personal_name}}, {{summary}}, {{exp1_title}}, etc.
+- python-docx reemplaza marcadores con datos reales
+- docx2pdf convierte Word a PDF final
+
+## COMANDOS DISPONIBLES
+
+### python main.py import-cv
+**FUNCIONALIDAD IMPLEMENTADA**
+Formulario interactivo para capturar datos del CV:
+- Despliega preguntas paso a paso para cada sección
+- Información personal, resumen, experiencia, educación, habilidades, idiomas, certificaciones
+- Guarda automáticamente en JSON estructurado en directorio `resumes_loaded/`
+- Permite múltiples entradas para experiencia y educación
+- Genera nombre de archivo automático basado en el nombre
+- Opción --output para especificar nombre de archivo
+
+**SALIDA**: archivo JSON en `resumes_loaded/` con CV estructurado listo para traducir
+
+### python main.py models
+Lista modelos LLM disponibles en Ollama local
+
+### python main.py extract mi_cv.pdf
+**ESTADO ACTUAL**: Extrae y estructura CV (usa IA para estructurar)
+**PROBLEMA**: No traduce, solo estructura
+**SALIDA**: archivo JSON con CV estructurado
+
+### python main.py translate --lang english
+**FUNCIONALIDAD ACTUAL**:
+- Muestra lista interactiva de CVs disponibles en `resumes_loaded/`
+- Usuario selecciona CV por número
+- Carga JSON directamente (sin usar IA para estructurar)
+- Traduce al idioma especificado con IA
+- Guarda resultado en JSON o PDF según formato especificado
+
+**FUNCIONALIDAD PDF DESHABILITADA**:
+- La opción de traducir desde PDF está comentada temporalmente
+- Razón: Requiere IA para estructurar (no determinístico)
+- Flujo recomendado: import-cv → editar JSON → translate
+- Código mantenido para futura implementación con parser determinístico
+
+Opciones:
+- --lang: Idioma destino (english, spanish, french, german, etc.)
+- --model: Modelo Ollama específico
+- --format: json o pdf
+- --template: html o word (solo si format=pdf)
+- --template-name: Nombre de plantilla específica
+
+Ejemplos:
+```bash
+# Traducir CV (selección interactiva)
+python main.py translate --lang english --format pdf
+
+# Traducir a español con plantilla específica
+python main.py translate --lang spanish --format pdf --template html
+```
+
+### python main.py templates
+Lista plantillas HTML y Word disponibles
+
+## DEPENDENCIAS
+
+### Core
+- pdfplumber: Extracción de texto de PDFs
+- ollama: Cliente Python para modelos LLM locales
+- typer: CLI moderna
+- rich: Output colorido en terminal
+- pydantic: Validación de datos
+
+### PDF Template Generation
+- weasyprint: HTML a PDF
+- jinja2: Motor de plantillas HTML
+
+### Word Template Generation
+- python-docx: Manipulación de archivos Word
+- docx2pdf: Conversión Word a PDF (requiere MS Word instalado)
+
+## PROBLEMAS RESUELTOS
+
+### 1. ✅ ESTRUCTURACIÓN POR CÓDIGO IMPLEMENTADA
+**Solución implementada**: Usuario proporciona JSON directamente mediante formulario interactivo
+- Comando `import-cv` captura datos estructurados
+- Guarda en `resumes_loaded/` como JSON
+- Comando `translate` muestra lista de CVs disponibles para seleccionar
+- IA solo se usa para traducir, no para estructurar
+
+### 2. ✅ SELECCIÓN INTERACTIVA DE CVs
+**Solución implementada**: Comando `translate` sin argumentos
+- Muestra tabla con CVs disponibles en `resumes_loaded/`
+- Usuario selecciona por número
+- Carga JSON directamente, solo traduce (sin IA para estructurar)
+- Funcionalidad PDF temporalmente deshabilitada (código comentado)
+
+## PROBLEMAS PENDIENTES
+
+### 1. COMANDO EXTRACT NO TRADUCE
+**Problema**: Solo estructura, no traduce
+**Comportamiento esperado**: ¿Debería traducir también o solo estructurar?
+**Estado**: Funciona como diseñado, pero puede ser confuso para usuarios
+
+### 2. FUNCIONALIDAD PDF EN TRANSLATE DESHABILITADA
+**Estado**: Código comentado temporalmente
+**Razón**: Requiere IA para estructurar (no determinístico)
+**Pendiente**: Implementar parser determinístico para PDFs o mantener flujo actual
+
+## ARQUITECTURA DE ARCHIVOS
+
+```
+CvTranslator/
+├── main.py                      # CLI principal con comandos
+├── cv_importer.py               # Formulario interactivo para importar CV (guarda en resumes_loaded/)
+├── pdf_extractor.py             # Extracción de texto de PDFs
+├── ollama_client.py             # Comunicación con Ollama (estructura + traduce)
+├── cv_structure.py              # Modelos de datos (Pydantic)
+├── pdf_generator.py             # Generación de PDFs con plantillas
+├── create_sample_word_template.py  # Script para crear plantilla Word ejemplo
+├── templates/
+│   ├── html/
+│   │   ├── modern.html          # Plantilla moderna
+│   │   └── classic.html         # Plantilla clásica
+│   └── word/
+│       ├── sample.docx          # Plantilla ejemplo
+│       ├── README.md            # Instrucciones para crear plantillas
+│       └── sample_instructions.txt
+├── requirements.txt             # Dependencias Python
+├── README.md                    # Documentación usuario
+├── purpose.txt                  # Este archivo - contexto para IAs
+└── enfoques_implementacion.txt  # Análisis de enfoques iniciales
+
+Archivos generados:
+├── resumes_loaded/              # CVs importados con import-cv
+│   └── *_cv.json               # CV estructurado listo para traducir
+├── *_structured.json            # CV estructurado (comando extract desde PDF)
+├── *_<idioma>.json             # CV traducido en JSON
+└── *_<idioma>.pdf              # CV traducido en PDF
+```
+
+## MODELOS OLLAMA RECOMENDADOS
+- llama3.2 (3B): Rápido, bueno para traducción
+- mistral (7B): Balance velocidad/calidad
+- gemma2/gemma3 (9B): Excelente para múltiples idiomas
+- qwen2.5 (7B): Muy bueno en estructuración
+
+## NOTAS PARA FUTUROS AGENTES IA
+
+1. **NO ELIMINAR** dependencias de Word template generation (python-docx, docx2pdf)
+2. ✅ La estructuración ahora es por código mediante formulario interactivo (import-cv)
+3. Las plantillas HTML usan Jinja2, mantener sintaxis {{variable}}
+4. Las plantillas Word usan marcadores {{variable}}, documentados en templates/word/README.md
+5. El comando translate actualmente solo acepta JSON:
+   - Muestra lista de CVs en resumes_loaded/
+   - Usuario selecciona por número
+   - Carga JSON → traduce → genera salida
+   - Funcionalidad PDF comentada (pendiente implementación determinística)
+6. El comando extract solo hace: extraer → estructurar (sin traducir)
+7. WeasyPrint requiere dependencias del sistema (GTK en Windows puede dar problemas)
+8. docx2pdf requiere Microsoft Word instalado en Windows
+9. Los CVs importados se guardan en `resumes_loaded/` (incluido en .gitignore)
+10. **FLUJO ACTUAL Y RECOMENDADO**: import-cv → editar JSON si necesario → translate (selección interactiva)
+11. La funcionalidad de traducir desde PDF está deshabilitada temporalmente (código comentado en main.py)
+
+## MEJORAS FUTURAS SUGERIDAS
+1. ✅ IMPLEMENTADO: Formulario interactivo para capturar datos del CV (comando import-cv)
+2. ✅ IMPLEMENTADO: Aceptar JSON como entrada directa en comando translate
+3. ✅ IMPLEMENTADO: Directorio dedicado para CVs cargados (resumes_loaded/)
+4. Agregar validación de datos con Pydantic antes de traducir
+5. Soporte para traducción por lotes (múltiples CVs)
+6. Cache de traducciones para evitar re-traducir
+7. Preview del PDF antes de generar
+8. Edición interactiva del JSON estructurado antes de traducir
+9. Comando para listar CVs disponibles en resumes_loaded/
+10. Comando para editar JSON existente de forma interactiva

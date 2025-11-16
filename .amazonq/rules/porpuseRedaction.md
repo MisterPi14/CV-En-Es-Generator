@@ -1,0 +1,1 @@
+Tras cada ejecucion de tarea revisa el archivo purpose.txt para ver si lo redactado dentro esta actualizado con lo ultimo realizado, en caso de diferir o faltar informacion siempre actualiza con todo lo ultimo realizado aunque cambie toda la definicion incluso
