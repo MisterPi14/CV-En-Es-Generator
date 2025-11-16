@@ -39,29 +39,44 @@ python main.py translate mi_cv.pdf --lang spanish
 Opciones:
 - `--lang` o `-l`: Idioma destino (english, spanish, french, german, etc.)
 - `--model` o `-m`: Modelo específico de Ollama a usar
-- `--format` o `-f`: Formato de salida (por defecto: json)
+- `--format` o `-f`: Formato de salida (json, pdf)
+- `--template` o `-t`: Tipo de plantilla (html, word)
+- `--template-name` o `-tn`: Nombre de plantilla específica
 
 Ejemplos:
 
 ```bash
-# Traducir a inglés
+# Traducir a inglés (JSON)
 python main.py translate mi_cv.pdf --lang english
 
-# Traducir a francés usando un modelo específico
-python main.py translate mi_cv.pdf --lang french --model llama3.2
+# Traducir a francés y generar PDF con plantilla HTML
+python main.py translate mi_cv.pdf --lang french --format pdf --template html
 
-# Traducir a alemán
-python main.py translate mi_cv.pdf --lang german
+# Traducir a alemán usando plantilla Word específica
+python main.py translate mi_cv.pdf --lang german --format pdf --template word --template-name mi_plantilla
+```
+
+### 4. Ver plantillas disponibles
+
+```bash
+python main.py templates
 ```
 
 ## Estructura del Proyecto
 
 ```
-AWS CV/
+CvTranslator/
 ├── main.py                 # Script principal con CLI
 ├── pdf_extractor.py        # Extracción de texto de PDFs
 ├── ollama_client.py        # Cliente para comunicación con Ollama
 ├── cv_structure.py         # Modelos de datos del CV
+├── pdf_generator.py        # Generación de PDFs con plantillas
+├── templates/              # Plantillas para PDFs
+│   ├── html/              # Plantillas HTML
+│   │   ├── modern.html    # Plantilla moderna
+│   │   └── classic.html   # Plantilla clásica
+│   └── word/              # Plantillas Word
+│       └── README.md      # Instrucciones para crear plantillas
 ├── requirements.txt        # Dependencias
 └── README.md              # Este archivo
 ```
@@ -113,7 +128,25 @@ Para descargar un modelo:
 ollama pull llama3.2
 ```
 
+## Plantillas
+
+### Plantillas HTML
+Incluidas por defecto:
+- **modern**: Diseño moderno con colores y etiquetas
+- **classic**: Diseño clásico estilo académico
+
+### Plantillas Word
+Puedes crear tus propias plantillas Word:
+1. Crea un archivo .docx con tu diseño
+2. Usa marcadores como `{{personal_name}}`, `{{summary}}`, etc.
+3. Guárdalo en `templates/word/`
+4. Consulta `templates/word/README.md` para la lista completa de marcadores
+
 ## Solución de Problemas
+
+### No se encuentran plantillas
+- Verifica que existan archivos en `templates/html/` o `templates/word/`
+- Para Word: consulta `templates/word/README.md` para crear plantillas
 
 ### Error: "No se encontraron modelos en Ollama"
 - Asegúrate de que Ollama esté ejecutándose: `ollama serve`
@@ -122,6 +155,10 @@ ollama pull llama3.2
 ### Error al extraer texto del PDF
 - Verifica que el PDF no esté protegido o encriptado
 - Asegúrate de que el PDF contenga texto (no solo imágenes)
+
+### Error al generar PDF
+- Para plantillas Word: Asegúrate de tener Microsoft Word instalado
+- Para plantillas HTML: Verifica que WeasyPrint esté instalado correctamente
 
 ### La traducción no es precisa
 - Prueba con un modelo más grande (ej: mistral, gemma2)

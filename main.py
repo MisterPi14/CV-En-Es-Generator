@@ -2,12 +2,13 @@ import typer
 import json
 from pathlib import Path
 from rich.console import Console
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from pdf_extractor import extract_text_from_pdf
 from ollama_client import list_available_models, structure_cv_with_llm, translate_cv
+from pdf_generator import PDFGenerator
 
 app = typer.Typer()
 console = Console()
@@ -16,8 +17,10 @@ console = Console()
 def translate(
     pdf_path: str = typer.Argument(..., help="Ruta al archivo PDF del CV"),
     target_lang: str = typer.Option("english", "--lang", "-l", help="Idioma destino (ej: english, spanish, french)"),
-    output_format: str = typer.Option("json", "--format", "-f", help="Formato de salida (json)"),
-    model: str = typer.Option(None, "--model", "-m", help="Modelo de Ollama a usar")
+    output_format: str = typer.Option("json", "--format", "-f", help="Formato de salida (json, pdf)"),
+    model: str = typer.Option(None, "--model", "-m", help="Modelo de Ollama a usar"),
+    template_type: str = typer.Option(None, "--template", "-t", help="Tipo de plantilla (html, word)"),
+    template_name: str = typer.Option(None, "--template-name", "-tn", help="Nombre de la plantilla específica")
 ):
     """Traduce un currículum vitae en PDF al idioma especificado."""
     
@@ -106,13 +109,87 @@ def translate(
     
     # Guardar resultado
     pdf_name = Path(pdf_path).stem
-    output_file = f"{pdf_name}_{target_lang}.{output_format}"
     
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(translated_cv, f, ensure_ascii=False, indent=2)
+    if output_format == "pdf":
+        # Generate PDF using templates
+        pdf_generator = PDFGenerator()
+        
+        # Select template type if not specified
+        if not template_type:
+            template_type = Prompt.ask(
+                "\n[yellow]Selecciona el tipo de plantilla[/yellow]",
+                choices=["html", "word"],
+                default="html"
+            )
+        
+        # List available templates
+        available_templates = pdf_generator.list_available_templates(template_type)
+        
+        if not available_templates:
+            console.print(f"[red]No se encontraron plantillas {template_type}. Revisa la carpeta templates/{template_type}/[/red]")
+            if template_type == "word":
+                console.print("[yellow]Consulta templates/word/README.md para crear plantillas Word[/yellow]")
+            raise typer.Exit(1)
+        
+        # Show available templates
+        table = Table(title=f"Plantillas {template_type.upper()} Disponibles")
+        table.add_column("Nº", style="cyan")
+        table.add_column("Plantilla", style="green")
+        
+        for idx, template in enumerate(available_templates, 1):
+            table.add_row(str(idx), template)
+        
+        console.print(table)
+        
+        # Select template
+        if template_name and template_name in available_templates:
+            selected_template = template_name
+        else:
+            selection = Prompt.ask(
+                "\n[yellow]Selecciona el número de la plantilla[/yellow]",
+                default="1"
+            )
+            try:
+                selected_template = available_templates[int(selection) - 1]
+            except (ValueError, IndexError):
+                console.print("[red]Selección inválida[/red]")
+                raise typer.Exit(1)
+        
+        console.print(f"\n[green]✓ Plantilla seleccionada: {selected_template}[/green]")
+        
+        # Generate PDF
+        output_file = f"{pdf_name}_{target_lang}.pdf"
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console
+        ) as progress:
+            task = progress.add_task(f"[cyan]Generando PDF con plantilla {template_type}...", total=None)
+            
+            if template_type == "html":
+                success = pdf_generator.generate_pdf_from_html(translated_cv, selected_template, output_file)
+            else:  # word
+                success = pdf_generator.generate_pdf_from_word(translated_cv, selected_template, output_file)
+            
+            progress.update(task, completed=True)
+        
+        if success:
+            console.print(f"\n[bold green]✓ PDF generado exitosamente![/bold green]")
+            console.print(f"[cyan]Archivo guardado en: {output_file}[/cyan]")
+        else:
+            console.print(f"\n[red]Error al generar el PDF[/red]")
+            raise typer.Exit(1)
     
-    console.print(f"\n[bold green]✓ Traducción completada![/bold green]")
-    console.print(f"[cyan]Archivo guardado en: {output_file}[/cyan]")
+    else:
+        # Save as JSON
+        output_file = f"{pdf_name}_{target_lang}.{output_format}"
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(translated_cv, f, ensure_ascii=False, indent=2)
+        
+        console.print(f"\n[bold green]✓ Traducción completada![/bold green]")
+        console.print(f"[cyan]Archivo guardado en: {output_file}[/cyan]")
 
 @app.command()
 def extract(
@@ -189,6 +266,36 @@ def models():
     
     for model in models_list:
         console.print(f"  • [green]{model}[/green]")
+    console.print()
+
+@app.command()
+def templates():
+    """Lista las plantillas disponibles para generar PDFs."""
+    pdf_generator = PDFGenerator()
+    
+    console.print("\n[cyan]Plantillas disponibles:[/cyan]\n")
+    
+    # HTML templates
+    html_templates = pdf_generator.list_available_templates("html")
+    if html_templates:
+        console.print("[green]Plantillas HTML:[/green]")
+        for template in html_templates:
+            console.print(f"  • {template}")
+    else:
+        console.print("[yellow]No hay plantillas HTML disponibles[/yellow]")
+    
+    console.print()
+    
+    # Word templates
+    word_templates = pdf_generator.list_available_templates("word")
+    if word_templates:
+        console.print("[green]Plantillas Word:[/green]")
+        for template in word_templates:
+            console.print(f"  • {template}")
+    else:
+        console.print("[yellow]No hay plantillas Word disponibles[/yellow]")
+        console.print("[cyan]Consulta templates/word/README.md para crear plantillas Word[/cyan]")
+    
     console.print()
 
 if __name__ == "__main__":
