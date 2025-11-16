@@ -78,7 +78,7 @@ def render_to_pdf(data: dict, lang: str = "es"):
     """Renderiza el CV a PDF (si WeasyPrint funciona) o genera fallback HTML.
 
     Si WeasyPrint no está disponible (falta libgobject/pango en Windows u otra dependencia),
-    se genera un archivo HTML para inspección manual y se muestra una guía breve.
+    se genera un archivo HTML para inspección manual y se muestra una guía.
     """
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATES_DIR)),
