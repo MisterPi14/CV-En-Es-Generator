@@ -5,15 +5,21 @@ Herramienta para traducir currículums vitae a diferentes idiomas usando modelos
 
 ## FLUJO ACTUAL DE LA APLICACIÓN
 
-### 1. EXTRACCIÓN (pdf_extractor.py)
+### 1. IMPORTACIÓN (cv_importer.py)
+- Formulario interactivo para capturar datos del CV
+- Usuario ingresa información paso a paso
+- Guarda automáticamente en `resumes_loaded/` como JSON estructurado
+- **ESTRUCTURACIÓN POR CÓDIGO**: No usa IA, el formulario genera JSON directamente
+
+### 2. EXTRACCIÓN LEGACY (pdf_extractor.py)
 - Lee archivos PDF usando pdfplumber
 - Extrae texto plano sin estructura
-- Retorna string con todo el contenido del CV
+- Solo usado en comando `extract` (no recomendado)
 
-### 2. ESTRUCTURACIÓN (ollama_client.py - structure_cv_with_llm)
-**ESTADO ACTUAL**: Usa IA para estructurar
-**PROBLEMA IDENTIFICADO**: La IA no debería estructurar, esto debe ser automático por código
-**RAZÓN**: Los PDFs no tienen estructura semántica consistente, cada CV tiene formato diferente
+### 3. ESTRUCTURACIÓN LEGACY (ollama_client.py - structure_cv_with_llm)
+**ESTADO**: Solo usado en comando `extract` (legacy)
+**PROBLEMA**: Usa IA para estructurar (no determinístico)
+**RAZÓN**: Los PDFs no tienen estructura semántica consistente
 
 Estructura JSON objetivo:
 ```json
@@ -47,14 +53,25 @@ Estructura JSON objetivo:
 }
 ```
 
-### 3. TRADUCCIÓN (ollama_client.py - translate_cv)
-- Recibe JSON estructurado
-- Usa modelo LLM local para traducir contenido al idioma objetivo
-- Mantiene estructura JSON intacta
-- NO traduce: nombres propios, emails, teléfonos, URLs
-- Retorna JSON con contenido traducido
+### 4. TRADUCCIÓN (ollama_client.py)
+**NUEVA IMPLEMENTACIÓN PROGRAMÁTICA**:
 
-### 4. GENERACIÓN DE PDF (pdf_generator.py)
+#### translate_text(text, target_lang, model)
+- Función simple que traduce un texto
+- Prompt minimalista: solo traduce, sin instrucciones de estructura
+- Retorna texto traducido
+
+#### translate_cv(cv_data, target_lang, model, progress, task)
+- **CONTROL PROGRAMÁTICO**: El código mantiene la estructura JSON
+- **IA SOLO TRADUCE**: Llama a translate_text() para cada sección
+- **SELECTIVO**: Solo traduce lo que debe traducirse
+  - ✅ Traduce: summary, job titles, job descriptions, degrees, skills, languages
+  - ❌ NO traduce: personal_info, company names, institutions, dates, certifications
+- **PROGRESO**: Actualiza barra de progreso después de cada traducción
+- **ENSAMBLAJE**: Construye el JSON traducido programáticamente
+- Retorna JSON con contenido traducido y estructura intacta
+
+### 5. GENERACIÓN DE PDF (pdf_generator.py)
 Soporta dos tipos de plantillas:
 
 #### A. Plantillas HTML (templates/html/)
@@ -71,7 +88,7 @@ Soporta dos tipos de plantillas:
 
 ## COMANDOS DISPONIBLES
 
-### python main.py import-cv
+### python main.py import-cv [--output nombre.json]
 **FUNCIONALIDAD IMPLEMENTADA**
 Formulario interactivo para capturar datos del CV:
 - Despliega preguntas paso a paso para cada sección
@@ -79,9 +96,11 @@ Formulario interactivo para capturar datos del CV:
 - Guarda automáticamente en JSON estructurado en directorio `resumes_loaded/`
 - Permite múltiples entradas para experiencia y educación
 - Genera nombre de archivo automático basado en el nombre
-- Opción --output para especificar nombre de archivo
+- Opción --output para especificar nombre de archivo personalizado
 
 **SALIDA**: archivo JSON en `resumes_loaded/` con CV estructurado listo para traducir
+
+**VENTAJA**: Estructuración 100% determinística, sin dependencia de IA
 
 ### python main.py models
 Lista modelos LLM disponibles en Ollama local
@@ -91,13 +110,25 @@ Lista modelos LLM disponibles en Ollama local
 **PROBLEMA**: No traduce, solo estructura
 **SALIDA**: archivo JSON con CV estructurado
 
-### python main.py translate --lang english
+### python main.py translate
 **FUNCIONALIDAD ACTUAL**:
+- Muestra lista interactiva de idiomas disponibles (English, Spanish, French)
+- Usuario selecciona idioma destino por número
 - Muestra lista interactiva de CVs disponibles en `resumes_loaded/`
 - Usuario selecciona CV por número
+- Muestra lista de modelos Ollama disponibles
+- Usuario selecciona modelo por número
 - Carga JSON directamente (sin usar IA para estructurar)
-- Traduce al idioma especificado con IA
+- **TRADUCCIÓN PROGRAMÁTICA**: El código mantiene la estructura JSON
+- **IA SOLO TRADUCE TEXTO**: Traduce sección por sección
+- Muestra barra de progreso con porcentaje y tiempo restante
 - Guarda resultado en JSON o PDF según formato especificado
+
+**LÓGICA DE TRADUCCIÓN**:
+- ✅ Traduce: summary, job titles, descriptions, degrees, skills, languages
+- ❌ NO traduce: nombres propios, empresas, instituciones, fechas, emails, teléfonos, certificaciones
+- Cada sección se traduce individualmente
+- El código ensambla el JSON final con las traducciones
 
 **FUNCIONALIDAD PDF DESHABILITADA**:
 - La opción de traducir desde PDF está comentada temporalmente
@@ -106,19 +137,21 @@ Lista modelos LLM disponibles en Ollama local
 - Código mantenido para futura implementación con parser determinístico
 
 Opciones:
-- --lang: Idioma destino (english, spanish, french, german, etc.)
-- --model: Modelo Ollama específico
-- --format: json o pdf
+- --format: json o pdf (default: json)
+- --model: Modelo Ollama específico (opcional, se pregunta interactivamente)
 - --template: html o word (solo si format=pdf)
 - --template-name: Nombre de plantilla específica
 
 Ejemplos:
 ```bash
-# Traducir CV (selección interactiva)
-python main.py translate --lang english --format pdf
+# Traducir CV (todo interactivo: idioma, CV, modelo)
+python main.py translate
 
-# Traducir a español con plantilla específica
-python main.py translate --lang spanish --format pdf --template html
+# Traducir y generar PDF
+python main.py translate --format pdf
+
+# Traducir con modelo específico
+python main.py translate --model llama3.2
 ```
 
 ### python main.py templates
@@ -148,32 +181,49 @@ Lista plantillas HTML y Word disponibles
 - Comando `import-cv` captura datos estructurados
 - Guarda en `resumes_loaded/` como JSON
 - Comando `translate` muestra lista de CVs disponibles para seleccionar
-- IA solo se usa para traducir, no para estructurar
+- IA solo se usa para traducir texto, no para estructurar
 
-### 2. ✅ SELECCIÓN INTERACTIVA DE CVs
-**Solución implementada**: Comando `translate` sin argumentos
-- Muestra tabla con CVs disponibles en `resumes_loaded/`
-- Usuario selecciona por número
-- Carga JSON directamente, solo traduce (sin IA para estructurar)
-- Funcionalidad PDF temporalmente deshabilitada (código comentado)
+### 2. ✅ TRADUCCIÓN PROGRAMÁTICA IMPLEMENTADA
+**Solución implementada**: El código controla la estructura, IA solo traduce texto
+- Función `translate_text()`: Traduce texto simple sin responsabilidad de estructura
+- Función `translate_cv()`: Itera sección por sección, traduce selectivamente
+- El código ensambla el JSON final con las traducciones
+- Más confiable, rápido y predecible que delegar estructura a IA
+
+### 3. ✅ SELECCIÓN INTERACTIVA COMPLETA
+**Solución implementada**: Todo el flujo es interactivo con listas numeradas
+- Selección de idioma (English, Spanish, French)
+- Selección de CV desde `resumes_loaded/`
+- Selección de modelo Ollama
+- Selección de plantilla (si genera PDF)
+- Barra de progreso con porcentaje y tiempo restante
 
 ## PROBLEMAS PENDIENTES
 
-### 1. COMANDO EXTRACT NO TRADUCE
-**Problema**: Solo estructura, no traduce
-**Comportamiento esperado**: ¿Debería traducir también o solo estructurar?
-**Estado**: Funciona como diseñado, pero puede ser confuso para usuarios
+### 1. COMANDO EXTRACT (LEGACY)
+**Estado**: Funcional pero no recomendado
+**Problema**: Usa IA para estructurar desde PDF (no determinístico)
+**Recomendación**: Usar `import-cv` en su lugar
+**Acción**: Considerar deprecar o documentar como legacy
 
 ### 2. FUNCIONALIDAD PDF EN TRANSLATE DESHABILITADA
-**Estado**: Código comentado temporalmente
+**Estado**: Código comentado temporalmente en main.py
 **Razón**: Requiere IA para estructurar (no determinístico)
+**Flujo actual**: import-cv → translate (solo JSON)
 **Pendiente**: Implementar parser determinístico para PDFs o mantener flujo actual
+
+### 3. VALIDACIÓN CON PYDANTIC
+**Estado**: Modelos definidos en cv_structure.py pero no usados
+**Pendiente**: Implementar validación antes de traducir
+**Beneficio**: Detectar errores en estructura JSON antes de procesar
 
 ## ARQUITECTURA DE ARCHIVOS
 
 ```
 CvTranslator/
-├── main.py                      # CLI principal con comandos
+├── install.py                   # Script de instalación (crea venv en ~/.python-envs/cvTranslator)
+├── uninstall.py                 # Script de desinstalación (elimina venv)
+├── main.py                      # CLI principal (activa venv automáticamente antes de ejecutar)
 ├── cv_importer.py               # Formulario interactivo para importar CV (guarda en resumes_loaded/)
 ├── pdf_extractor.py             # Extracción de texto de PDFs
 ├── ollama_client.py             # Comunicación con Ollama (estructura + traduce)
@@ -202,10 +252,30 @@ Archivos generados:
 ```
 
 ## MODELOS OLLAMA RECOMENDADOS
-- llama3.2 (3B): Rápido, bueno para traducción
+- llama3.2 (3B): Rápido, bueno para traducción de textos cortos
 - mistral (7B): Balance velocidad/calidad
 - gemma2/gemma3 (9B): Excelente para múltiples idiomas
-- qwen2.5 (7B): Muy bueno en estructuración
+- qwen2.5 (7B): Muy bueno para traducción precisa
+
+**NOTA**: Ya no se requieren modelos buenos en "estructuración" porque la estructuración es programática
+
+## INSTALACIÓN Y ENTORNO VIRTUAL
+
+### install.py
+- Crea entorno virtual en `~/.python-envs/cvTranslator`
+- Instala todas las dependencias desde requirements.txt
+- Uso: `python install.py`
+
+### uninstall.py
+- Elimina el entorno virtual y todas sus dependencias
+- Solicita confirmación antes de eliminar
+- Uso: `python uninstall.py`
+
+### main.py - Activación Automática de Venv
+- Verifica si el venv existe en `~/.python-envs/cvTranslator`
+- Si no está activo, re-ejecuta el script con el python del venv
+- Si no existe el venv, muestra error y pide ejecutar install.py
+- **IMPORTANTE**: El usuario no necesita activar manualmente el venv
 
 ## NOTAS PARA FUTUROS AGENTES IA
 
@@ -213,26 +283,36 @@ Archivos generados:
 2. ✅ La estructuración ahora es por código mediante formulario interactivo (import-cv)
 3. Las plantillas HTML usan Jinja2, mantener sintaxis {{variable}}
 4. Las plantillas Word usan marcadores {{variable}}, documentados en templates/word/README.md
-5. El comando translate actualmente solo acepta JSON:
-   - Muestra lista de CVs en resumes_loaded/
-   - Usuario selecciona por número
-   - Carga JSON → traduce → genera salida
+5. El comando translate es completamente interactivo:
+   - Selección de idioma por número (english, spanish, french)
+   - Selección de CV desde resumes_loaded/ por número
+   - Selección de modelo Ollama por número
+   - Carga JSON → traduce programáticamente → genera salida
+   - Barra de progreso en tiempo real
    - Funcionalidad PDF comentada (pendiente implementación determinística)
 6. El comando extract solo hace: extraer → estructurar (sin traducir)
 7. WeasyPrint requiere dependencias del sistema (GTK en Windows puede dar problemas)
 8. docx2pdf requiere Microsoft Word instalado en Windows
 9. Los CVs importados se guardan en `resumes_loaded/` (incluido en .gitignore)
-10. **FLUJO ACTUAL Y RECOMENDADO**: import-cv → editar JSON si necesario → translate (selección interactiva)
+10. **FLUJO ACTUAL Y RECOMENDADO**: install.py → import-cv → editar JSON si necesario → translate (todo interactivo)
 11. La funcionalidad de traducir desde PDF está deshabilitada temporalmente (código comentado en main.py)
+12. **TRADUCCIÓN PROGRAMÁTICA**: La IA solo traduce texto, el código mantiene la estructura JSON
+13. **PROGRESO VISUAL**: Barra de progreso muestra avance en tiempo real durante traducción
+14. **VENV AUTOMÁTICO**: main.py activa el venv automáticamente, el usuario no necesita hacerlo manualmente
+15. **INSTALACIÓN SIMPLE**: Un solo comando `python install.py` configura todo
 
 ## MEJORAS FUTURAS SUGERIDAS
 1. ✅ IMPLEMENTADO: Formulario interactivo para capturar datos del CV (comando import-cv)
 2. ✅ IMPLEMENTADO: Aceptar JSON como entrada directa en comando translate
 3. ✅ IMPLEMENTADO: Directorio dedicado para CVs cargados (resumes_loaded/)
-4. Agregar validación de datos con Pydantic antes de traducir
-5. Soporte para traducción por lotes (múltiples CVs)
-6. Cache de traducciones para evitar re-traducir
-7. Preview del PDF antes de generar
-8. Edición interactiva del JSON estructurado antes de traducir
-9. Comando para listar CVs disponibles en resumes_loaded/
-10. Comando para editar JSON existente de forma interactiva
+4. ✅ IMPLEMENTADO: Selección interactiva de idioma con lista numerada
+5. ✅ IMPLEMENTADO: Traducción programática (IA solo traduce texto, código mantiene estructura)
+6. ✅ IMPLEMENTADO: Barra de progreso con porcentaje y tiempo restante
+7. Agregar validación de datos con Pydantic antes de traducir
+8. Soporte para traducción por lotes (múltiples CVs)
+9. Cache de traducciones para evitar re-traducir
+10. Preview del PDF antes de generar
+11. Edición interactiva del JSON estructurado antes de traducir
+12. Comando para listar CVs disponibles en resumes_loaded/
+13. Comando para editar JSON existente de forma interactiva
+14. Agregar más idiomas a la lista de selección

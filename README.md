@@ -7,14 +7,25 @@ Herramienta para capturar, estructurar y traducir currículums vitae usando mode
 1. **Python 3.8+** instalado
 2. **Ollama** instalado y ejecutándose ([https://ollama.ai](https://ollama.ai))
 3. Al menos un modelo descargado en Ollama (ej: `ollama pull llama3.2`)
+4. **Microsoft Word** (solo si usas plantillas Word para generar PDFs)
 
 ## Instalación
 
 ```bash
-pip install -r requirements.txt
+python install.py
+```
+
+Esto creará un entorno virtual en `~/.python-envs/cvTranslator` e instalará todas las dependencias automáticamente.
+
+### Desinstalación
+
+```bash
+python uninstall.py
 ```
 
 ## Uso
+
+**Nota**: El entorno virtual se activa automáticamente al ejecutar `main.py`.
 
 ### 1. Importar CV mediante formulario interactivo
 
@@ -85,7 +96,9 @@ python main.py templates
 
 ```
 CvTranslator/
-├── main.py                 # Script principal con CLI
+├── install.py              # Script de instalación (crea venv e instala dependencias)
+├── uninstall.py            # Script de desinstalación (elimina venv)
+├── main.py                 # Script principal con CLI (activa venv automáticamente)
 ├── cv_importer.py          # Formulario interactivo para importar CVs
 ├── pdf_extractor.py        # Extracción de texto de PDFs (legacy)
 ├── ollama_client.py        # Cliente para comunicación con Ollama

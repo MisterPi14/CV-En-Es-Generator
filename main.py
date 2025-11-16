@@ -1,10 +1,37 @@
 import typer
 import json
+import sys
+import subprocess
 from pathlib import Path
 from rich.console import Console
 from rich.prompt import Prompt, Confirm
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn
+
+# Activar venv si no está activo
+def activate_venv():
+    venv_path = Path.home() / ".python-envs" / "cvTranslator"
+    
+    if not venv_path.exists():
+        print("Error: Entorno virtual no encontrado.")
+        print("Ejecuta primero: python install.py")
+        sys.exit(1)
+    
+    # Verificar si ya estamos en el venv
+    if sys.prefix == str(venv_path):
+        return  # Ya estamos en el venv
+    
+    # Activar venv y re-ejecutar el script
+    if sys.platform == "win32":
+        python_path = venv_path / "Scripts" / "python.exe"
+    else:
+        python_path = venv_path / "bin" / "python"
+    
+    # Re-ejecutar con el python del venv
+    subprocess.run([str(python_path)] + sys.argv)
+    sys.exit(0)
+
+activate_venv()
 
 from pdf_extractor import extract_text_from_pdf
 from ollama_client import list_available_models, structure_cv_with_llm, translate_cv
