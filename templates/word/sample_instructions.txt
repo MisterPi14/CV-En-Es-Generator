@@ -1,0 +1,47 @@
+INSTRUCCIONES PARA CREAR PLANTILLA WORD DE EJEMPLO
+=================================================
+
+Para crear una plantilla Word básica:
+
+1. Abre Microsoft Word
+2. Crea un documento con este contenido:
+
+---
+
+{{personal_name}}
+{{personal_email}} | {{personal_phone}} | {{personal_location}}
+
+PROFESSIONAL SUMMARY
+{{summary}}
+
+PROFESSIONAL EXPERIENCE
+
+{{exp1_title}} - {{exp1_company}}
+{{exp1_duration}}
+{{exp1_description}}
+
+{{exp2_title}} - {{exp2_company}}
+{{exp2_duration}}
+{{exp2_description}}
+
+EDUCATION
+{{edu1_degree}} - {{edu1_institution}} ({{edu1_year}})
+
+SKILLS
+{{skills}}
+
+LANGUAGES
+{{languages}}
+
+CERTIFICATIONS
+{{certifications}}
+
+---
+
+3. Guarda como "sample.docx" en esta carpeta
+4. Aplica el formato que desees (fuentes, colores, etc.)
+5. Los marcadores {{}} serán reemplazados automáticamente
+
+NOTA: Después de instalar las dependencias con "pip install -r requirements.txt",
+puedes ejecutar "python create_sample_word_template.py" para generar automáticamente
+una plantilla de ejemplo.

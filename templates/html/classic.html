@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CV - {{ personal_info.name }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Times New Roman', serif; line-height: 1.5; color: #000; }
+        .container { max-width: 750px; margin: 0 auto; padding: 30px; }
+        
+        .header { text-align: center; margin-bottom: 40px; }
+        .header h1 { font-size: 2.2em; font-weight: bold; margin-bottom: 15px; }
+        .header .contact { font-size: 1em; }
+        
+        .section { margin-bottom: 30px; }
+        .section h2 { font-size: 1.3em; font-weight: bold; margin-bottom: 15px; 
+                     text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 5px; }
+        
+        .summary { margin-bottom: 20px; text-align: justify; }
+        
+        .experience-item, .education-item { margin-bottom: 18px; }
+        .experience-item h3, .education-item h3 { font-weight: bold; margin-bottom: 3px; }
+        .experience-item .meta, .education-item .meta { font-style: italic; margin-bottom: 8px; }
+        .experience-item p, .education-item p { text-align: justify; }
+        
+        .list-section { margin-bottom: 15px; }
+        .list-section ul { margin-left: 20px; }
+        .list-section li { margin-bottom: 3px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>{{ personal_info.name or "NOMBRE COMPLETO" }}</h1>
+            <div class="contact">
+                {{ personal_info.email or "email@ejemplo.com" }}<br>
+                {{ personal_info.phone or "Teléfono" }} | {{ personal_info.location or "Ubicación" }}
+                {% if personal_info.linkedin %}<br>{{ personal_info.linkedin }}{% endif %}
+            </div>
+        </header>
+
+        {% if summary %}
+        <section class="section">
+            <h2>Professional Summary</h2>
+            <div class="summary">{{ summary }}</div>
+        </section>
+        {% endif %}
+
+        {% if experience %}
+        <section class="section">
+            <h2>Professional Experience</h2>
+            {% for job in experience %}
+            <div class="experience-item">
+                <h3>{{ job.title or "Cargo" }}</h3>
+                <div class="meta">{{ job.company or "Empresa" }} ({{ job.duration or "Período" }})</div>
+                <p>{{ job.description or "Descripción del puesto" }}</p>
+            </div>
+            {% endfor %}
+        </section>
+        {% endif %}
+
+        {% if education %}
+        <section class="section">
+            <h2>Education</h2>
+            {% for edu in education %}
+            <div class="education-item">
+                <h3>{{ edu.degree or "Título" }}</h3>
+                <div class="meta">{{ edu.institution or "Institución" }} ({{ edu.year or "Año" }})</div>
+            </div>
+            {% endfor %}
+        </section>
+        {% endif %}
+
+        {% if skills %}
+        <section class="section">
+            <h2>Technical Skills</h2>
+            <div class="list-section">
+                <ul>
+                    {% for skill in skills %}
+                    <li>{{ skill }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </section>
+        {% endif %}
+
+        {% if languages %}
+        <section class="section">
+            <h2>Languages</h2>
+            <div class="list-section">
+                <ul>
+                    {% for lang in languages %}
+                    <li>{{ lang }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </section>
+        {% endif %}
+
+        {% if certifications %}
+        <section class="section">
+            <h2>Certifications</h2>
+            <div class="list-section">
+                <ul>
+                    {% for cert in certifications %}
+                    <li>{{ cert }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </section>
+        {% endif %}
+    </div>
+</body>
+</html>
