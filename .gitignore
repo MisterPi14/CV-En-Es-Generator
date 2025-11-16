@@ -25,6 +25,7 @@ Thumbs.db
 *.pdf
 *_structured.json
 *_translated.json
+resumes_loaded/
 
 # Logs
 *.log

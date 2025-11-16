@@ -16,13 +16,30 @@ pip install -r requirements.txt
 
 ## Uso
 
-### 1. Ver modelos disponibles
+### 1. Importar CV mediante formulario interactivo
+
+```bash
+python main.py import-cv
+```
+
+Esto abrirá un formulario interactivo donde podrás ingresar:
+- Información personal (nombre, email, teléfono, ubicación, LinkedIn)
+- Resumen profesional
+- Experiencia laboral (múltiples entradas)
+- Educación (múltiples entradas)
+- Habilidades
+- Idiomas
+- Certificaciones
+
+El CV se guardará automáticamente en formato JSON.
+
+### 2. Ver modelos disponibles
 
 ```bash
 python main.py models
 ```
 
-### 2. Extraer y estructurar un CV (sin traducir)
+### 3. Extraer y estructurar un CV desde PDF (sin traducir)
 
 ```bash
 python main.py extract mi_cv.pdf
@@ -30,7 +47,7 @@ python main.py extract mi_cv.pdf
 
 Esto generará un archivo `mi_cv_structured.json` con el CV estructurado.
 
-### 3. Traducir un CV
+### 4. Traducir un CV
 
 ```bash
 python main.py translate mi_cv.pdf --lang spanish
@@ -56,7 +73,7 @@ python main.py translate mi_cv.pdf --lang french --format pdf --template html
 python main.py translate mi_cv.pdf --lang german --format pdf --template word --template-name mi_plantilla
 ```
 
-### 4. Ver plantillas disponibles
+### 5. Ver plantillas disponibles
 
 ```bash
 python main.py templates

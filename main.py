@@ -9,25 +9,57 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from pdf_extractor import extract_text_from_pdf
 from ollama_client import list_available_models, structure_cv_with_llm, translate_cv
 from pdf_generator import PDFGenerator
+from cv_importer import import_cv_interactive
 
 app = typer.Typer()
 console = Console()
 
 @app.command()
 def translate(
-    pdf_path: str = typer.Argument(..., help="Ruta al archivo PDF del CV"),
     target_lang: str = typer.Option("english", "--lang", "-l", help="Idioma destino (ej: english, spanish, french)"),
     output_format: str = typer.Option("json", "--format", "-f", help="Formato de salida (json, pdf)"),
     model: str = typer.Option(None, "--model", "-m", help="Modelo de Ollama a usar"),
     template_type: str = typer.Option(None, "--template", "-t", help="Tipo de plantilla (html, word)"),
     template_name: str = typer.Option(None, "--template-name", "-tn", help="Nombre de la plantilla específica")
 ):
-    """Traduce un currículum vitae en PDF al idioma especificado."""
+    """Traduce un currículum vitae desde JSON al idioma especificado."""
     
-    # Verificar que el archivo existe
-    if not Path(pdf_path).exists():
-        console.print(f"[red]Error: El archivo {pdf_path} no existe[/red]")
+    # Listar CVs disponibles en resumes_loaded
+    resumes_dir = Path("resumes_loaded")
+    
+    if not resumes_dir.exists() or not any(resumes_dir.glob("*.json")):
+        console.print("[red]No se encontraron CVs en resumes_loaded/[/red]")
+        console.print("[yellow]Usa 'python main.py import-cv' para crear un CV primero[/yellow]")
         raise typer.Exit(1)
+    
+    # Obtener lista de CVs
+    cv_files = list(resumes_dir.glob("*.json"))
+    
+    # Mostrar tabla de CVs disponibles
+    table = Table(title="CVs Disponibles")
+    table.add_column("Nº", style="cyan")
+    table.add_column("Archivo", style="green")
+    
+    for idx, cv_file in enumerate(cv_files, 1):
+        table.add_row(str(idx), cv_file.name)
+    
+    console.print("\n")
+    console.print(table)
+    
+    # Seleccionar CV
+    selection = Prompt.ask(
+        "\n[yellow]Selecciona el número del CV a traducir[/yellow]",
+        default="1"
+    )
+    
+    try:
+        selected_cv = cv_files[int(selection) - 1]
+    except (ValueError, IndexError):
+        console.print("[red]Selección inválida[/red]")
+        raise typer.Exit(1)
+    
+    console.print(f"\n[green]✓ CV seleccionado: {selected_cv.name}[/green]")
+    file_path_obj = selected_cv
     
     # Listar modelos disponibles
     console.print("\n[cyan]Obteniendo modelos disponibles en Ollama...[/cyan]")
@@ -63,37 +95,65 @@ def translate(
     
     console.print(f"\n[green]✓ Modelo seleccionado: {selected_model}[/green]")
     
-    # Extraer texto del PDF
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        task = progress.add_task("[cyan]Extrayendo texto del PDF...", total=None)
-        text = extract_text_from_pdf(pdf_path)
-        progress.update(task, completed=True)
+    # Cargar JSON directamente
+    console.print("\n[cyan]Cargando CV desde JSON...[/cyan]")
+    with open(file_path_obj, 'r', encoding='utf-8') as f:
+        cv_data = json.load(f)
+    console.print("[green]✓ CV cargado correctamente[/green]")
     
-    if not text:
-        console.print("[red]No se pudo extraer texto del PDF[/red]")
-        raise typer.Exit(1)
-    
-    console.print(f"[green]✓ Texto extraído: {len(text)} caracteres[/green]")
-    
-    # Estructurar CV con LLM
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        task = progress.add_task("[cyan]Estructurando CV con IA...", total=None)
-        cv_data = structure_cv_with_llm(text, selected_model)
-        progress.update(task, completed=True)
-    
-    if not cv_data:
-        console.print("[red]No se pudo estructurar el CV[/red]")
-        raise typer.Exit(1)
-    
-    console.print("[green]✓ CV estructurado correctamente[/green]")
+    # ============================================================================
+    # FUNCIONALIDAD PDF COMENTADA - PENDIENTE DE IMPLEMENTACIÓN
+    # ============================================================================
+    # La extracción desde PDF está temporalmente deshabilitada porque:
+    # 1. Requiere usar IA para estructurar (no determinístico)
+    # 2. El flujo recomendado es: import-cv → editar JSON → translate
+    # 3. Mantener código para futura implementación con parser determinístico
+    #
+    # Para habilitar en el futuro:
+    # - Descomentar el código siguiente
+    # - Agregar parámetro file_path como Argument opcional
+    # - Implementar detección automática de tipo de archivo
+    # ============================================================================
+    #
+    # # Determinar si es JSON o PDF
+    # if file_path_obj.suffix.lower() == '.json':
+    #     # Cargar JSON directamente
+    #     console.print("\n[cyan]Cargando CV desde JSON...[/cyan]")
+    #     with open(file_path_obj, 'r', encoding='utf-8') as f:
+    #         cv_data = json.load(f)
+    #     console.print("[green]✓ CV cargado correctamente[/green]")
+    # else:
+    #     # Extraer texto del PDF
+    #     with Progress(
+    #         SpinnerColumn(),
+    #         TextColumn("[progress.description]{task.description}"),
+    #         console=console
+    #     ) as progress:
+    #         task = progress.add_task("[cyan]Extrayendo texto del PDF...", total=None)
+    #         text = extract_text_from_pdf(str(file_path_obj))
+    #         progress.update(task, completed=True)
+    #     
+    #     if not text:
+    #         console.print("[red]No se pudo extraer texto del PDF[/red]")
+    #         raise typer.Exit(1)
+    #     
+    #     console.print(f"[green]✓ Texto extraído: {len(text)} caracteres[/green]")
+    #     
+    #     # Estructurar CV con LLM
+    #     with Progress(
+    #         SpinnerColumn(),
+    #         TextColumn("[progress.description]{task.description}"),
+    #         console=console
+    #     ) as progress:
+    #         task = progress.add_task("[cyan]Estructurando CV con IA...", total=None)
+    #         cv_data = structure_cv_with_llm(text, selected_model)
+    #         progress.update(task, completed=True)
+    #     
+    #     if not cv_data:
+    #         console.print("[red]No se pudo estructurar el CV[/red]")
+    #         raise typer.Exit(1)
+    #     
+    #     console.print("[green]✓ CV estructurado correctamente[/green]")
     
     # Traducir CV
     with Progress(
@@ -108,7 +168,7 @@ def translate(
     console.print(f"[green]✓ CV traducido a {target_lang}[/green]")
     
     # Guardar resultado
-    pdf_name = Path(pdf_path).stem
+    file_name = file_path_obj.stem
     
     if output_format == "pdf":
         # Generate PDF using templates
@@ -158,7 +218,7 @@ def translate(
         console.print(f"\n[green]✓ Plantilla seleccionada: {selected_template}[/green]")
         
         # Generate PDF
-        output_file = f"{pdf_name}_{target_lang}.pdf"
+        output_file = f"{file_name}_{target_lang}.pdf"
         
         with Progress(
             SpinnerColumn(),
@@ -183,7 +243,7 @@ def translate(
     
     else:
         # Save as JSON
-        output_file = f"{pdf_name}_{target_lang}.{output_format}"
+        output_file = f"{file_name}_{target_lang}.{output_format}"
         
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(translated_cv, f, ensure_ascii=False, indent=2)
@@ -267,6 +327,13 @@ def models():
     for model in models_list:
         console.print(f"  • [green]{model}[/green]")
     console.print()
+
+@app.command()
+def import_cv(
+    output: str = typer.Option(None, "--output", "-o", help="Nombre del archivo JSON de salida")
+):
+    """Importa un CV mediante formulario interactivo y lo guarda en JSON."""
+    import_cv_interactive(output)
 
 @app.command()
 def templates():
