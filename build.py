@@ -5,7 +5,15 @@ import sys
 import traceback
 import tempfile
 import contextlib
+import copy
 
+try:
+    import ollama
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
+
+OLLAMA_MODEL = "gemma3:4b"
 # Intento de importación de WeasyPrint con manejo de errores para dependencias nativas faltantes
 try:
     from weasyprint import HTML  # type: ignore
@@ -129,15 +137,95 @@ def render_to_pdf(data: dict, lang: str):
     print("Para Playwright: pip install playwright && python -m playwright install chromium")
     print("Para WeasyPrint (dependencias nativas): https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#installation")
 
+def detect_language(text: str) -> str:
+    if not OLLAMA_AVAILABLE:
+        print("[WARN] Ollama no está instalado. Usando 'es' por defecto.")
+        return "es"
+    
+    prompt = f"You are a language detector. Respond with exactly 'es' if the text is Spanish, or 'en' if the text is English. Text: {text}"
+    print("[Ollama] Detectando idioma...")
+    try:
+        response = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt}])
+        content = response['message']['content'].strip().lower()
+        if 'en' in content:
+            return 'en'
+        return 'es'
+    except Exception as e:
+        print(f"[Ollama][ERROR] No se pudo detectar idioma: {e}")
+        return "es"
+
+def translate_text(text: str, target_lang: str) -> str:
+    if not OLLAMA_AVAILABLE:
+        return text
+    
+    lang_name = "Professional English" if target_lang == "en" else "Professional Spanish"
+    if target_lang == "en":
+        example_in = "Desarrollé APIs REST para clientes enterprise."
+        example_out = "Developed REST APIs for enterprise clients."
+    else:
+        example_in = "Developed REST APIs for enterprise clients."
+        example_out = "Desarrollé APIs REST para clientes enterprise."
+        
+    prompt = f"""Role: You are an expert professional translator specializing in software engineering resumes.
+Task: Translate the following text into {lang_name}.
+Limits:
+- DO NOT add any extra information.
+- DO NOT provide explanations, notes, or conversational text.
+- RETURN ONLY the translated text. Maintain formatting if any (like newlines).
+Example Input: {example_in}
+Example Output: {example_out}
+
+Text to translate:
+{text}"""
+
+    print(f"[Ollama] Traduciendo bloque a {target_lang}...")
+    try:
+        response = ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': prompt}])
+        return response['message']['content'].strip()
+    except Exception as e:
+        print(f"[Ollama][ERROR] Falla en traducción: {e}")
+        return text
+
+def translate_cv_data(data: dict, target_lang: str) -> dict:
+    translated = copy.deepcopy(data)
+    
+    def t(text: str) -> str:
+        if not text or not isinstance(text, str): return text
+        return translate_text(text, target_lang)
+
+    print(f"--- Iniciando traducción del CV completo a '{target_lang}' ---")
+    
+    if 'personal_info' in translated and 'title' in translated['personal_info']:
+        translated['personal_info']['title'] = t(translated['personal_info']['title'])
+        
+    if 'summary' in translated:
+        translated['summary'] = t(translated['summary'])
+        
+    for exp in translated.get('experience', []):
+        if 'title' in exp: exp['title'] = t(exp['title'])
+        if 'description' in exp: exp['description'] = t(exp['description'])
+        
+    for edu in translated.get('education', []):
+        if 'degree' in edu: edu['degree'] = t(edu['degree'])
+        
+    # Tecnologías (skills) no se traducen.
+    
+    print("--- Traducción finalizada ---")
+    return translated
+
 def main():
     data = load_cv_data()
+    
+    summary_text = data.get('summary', '')
+    source_lang = detect_language(summary_text) if summary_text else 'es'
+    print(f"Idioma base detectado: {source_lang}")
 
     for lang in ["es", "en"]:
-        if lang == "es":
+        if lang == source_lang:
             data_lang = data
         else:
-            # TODO: Implement translation logic here
-            data_lang = data
+            data_lang = translate_cv_data(data, lang)
+            
         render_to_pdf(data_lang, lang)
 
 if __name__ == "__main__":

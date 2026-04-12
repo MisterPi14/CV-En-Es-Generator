@@ -1,5 +1,6 @@
 PyYAML
 Jinja2
 playwright
+ollama
 # (Opcional) WeasyPrint si quieres volver al motor original:
 # WeasyPrint
