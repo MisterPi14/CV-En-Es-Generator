@@ -84,7 +84,9 @@ UI_STRINGS = {
         "section_education": "Educación",
         "section_certifications": "Certificaciones",
         "section_courses": "Cursos",
-        "section_skills": "Habilidades"
+        "section_skills": "Habilidades",
+        "section_languages": "Lenguajes",
+        "section_technologies": "Tecnologías"
     },
     "en": {
         "section_summary": "Professional Summary",
@@ -93,7 +95,9 @@ UI_STRINGS = {
         "section_education": "Education",
         "section_certifications": "Certifications",
         "section_courses": "Courses",
-        "section_skills": "Skills"
+        "section_skills": "Skills",
+        "section_languages": "Languages",
+        "section_technologies": "Technologies"
     }
 }
 
