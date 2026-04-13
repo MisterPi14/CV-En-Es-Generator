@@ -6,6 +6,7 @@ import traceback
 import tempfile
 import contextlib
 import copy
+import re
 
 try:
     import ollama
@@ -72,20 +73,26 @@ BASE_DIR = Path(__file__).parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
-CV_FILE = BASE_DIR / "cv.yaml"
-OUTPUT_PREFIX = "cv_"
+CV_FILE = BASE_DIR / "resume.yaml"
+OUTPUT_PREFIX = "resume_"
 
 UI_STRINGS = {
     "es": {
         "section_summary": "Resumen Profesional",
         "section_experience": "Experiencia Profesional",
+        "section_projects": "Proyectos",
         "section_education": "Educación",
+        "section_certifications": "Certificaciones",
+        "section_courses": "Cursos",
         "section_skills": "Habilidades"
     },
     "en": {
         "section_summary": "Professional Summary",
         "section_experience": "Work Experience",
+        "section_projects": "Projects",
         "section_education": "Education",
+        "section_certifications": "Certifications",
+        "section_courses": "Courses",
         "section_skills": "Skills"
     }
 }
@@ -94,6 +101,11 @@ def load_cv_data():
     with CV_FILE.open('r', encoding='utf-8') as f:
         data = yaml.safe_load(f)
     return data
+
+def markdown_links(text: str) -> str:
+    if not isinstance(text, str):
+        return text
+    return re.sub(r'\[([^\]]+)\]\((https?://[^\)]+)\)', r'<a href="\2" target="_blank">\1</a>', text)
 
 def render_to_pdf(data: dict, lang: str):
     """Renderiza el CV a PDF (si WeasyPrint funciona) o genera fallback HTML.
@@ -105,6 +117,7 @@ def render_to_pdf(data: dict, lang: str):
         loader=FileSystemLoader(str(TEMPLATES_DIR)),
         autoescape=select_autoescape(['html', 'xml'])
     )
+    env.filters['markdown_links'] = markdown_links
     template = env.get_template('template.html.j2')
 
     html_content = template.render(
@@ -201,12 +214,29 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
     if 'summary' in translated:
         translated['summary'] = t(translated['summary'])
         
-    for exp in translated.get('experience', []):
-        if 'title' in exp: exp['title'] = t(exp['title'])
+    for exp in translated.get('work_experience', []):
+        if 'role' in exp: exp['role'] = t(exp['role'])
+        if 'company' in exp: exp['company'] = t(exp['company'])
         if 'description' in exp: exp['description'] = t(exp['description'])
-        
+
+    for proj in translated.get('projects', []):
+        if 'title' in proj: proj['title'] = t(proj['title'])
+        if 'description' in proj: proj['description'] = t(proj['description'])
+            
     for edu in translated.get('education', []):
         if 'degree' in edu: edu['degree'] = t(edu['degree'])
+        if 'institution' in edu: edu['institution'] = t(edu['institution'])
+        if 'Relevant subjects' in edu: edu['Relevant subjects'] = t(edu['Relevant subjects'])
+        if 'Extracurricular activities' in edu:
+            edu['Extracurricular activities'] = [t(c) for c in edu['Extracurricular activities']]
+        if 'Relevant projects' in edu:
+            edu['Relevant projects'] = [t(c) for c in edu['Relevant projects']]
+
+    if 'certifications' in translated:
+        translated['certifications'] = [t(c) for c in translated['certifications']]
+
+    if 'courses' in translated:
+        translated['courses'] = [t(c) for c in translated['courses']]
         
     # Tecnologías (skills) no se traducen.
     
@@ -217,7 +247,14 @@ def main():
     data = load_cv_data()
     
     summary_text = data.get('summary', '')
-    source_lang = detect_language(summary_text) if summary_text else 'es'
+    if not summary_text:
+        work = data.get('work_experience', [])
+        summary_text = work[0].get('description', '') if work else ''
+    if not summary_text:
+        edu = data.get('education', [])
+        summary_text = edu[0].get('degree', '') if edu else 'es'
+
+    source_lang = detect_language(summary_text)
     print(f"Idioma base detectado: {source_lang}")
 
     for lang in ["es", "en"]:
