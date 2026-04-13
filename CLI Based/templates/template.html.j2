@@ -32,13 +32,13 @@
       {% for edu in education %}
       <div class="edu-item">
         <div class="degree">{{ edu.degree | markdown_links | safe }}</div>
-        <div class="institution-period">{{ edu.institution | markdown_links | safe }} · <span class="period">{{ edu.period }}</span></div>
+        <div class="institution-period">{{ edu.institution | markdown_links | safe }} · <span class="period">{{ edu.period }}</span>{% if edu.gpa %} · <span>{{ "GPA:" if lang == 'en' else "Promedio:" }} {{ edu.gpa }}</span>{% endif %}</div>
         {% if edu['Relevant subjects'] %}
-          <p class="edu-detail"><strong>{{ "Relevant subjects:" if lang == 'en' else "Materias relevantes:" }}</strong> {{ edu['Relevant subjects'] | markdown_links | safe }}</p>
+          <p class="edu-detail"><strong>{{ "Relevant subjects" if lang == 'en' else "Materias relevantes" }}</strong> {{ edu['Relevant subjects'] | markdown_links | safe }}</p>
         {% endif %}
         {% if edu['Extracurricular activities'] %}
           <div class="edu-detail">
-            <strong>{{ "Extracurricular activities:" if lang == 'en' else "Actividades extracurriculares:" }}</strong>
+            <strong>{{ "Extracurricular activities" if lang == 'en' else "Actividades extracurriculares" }}</strong>
             <ul>
             {% for activity in edu['Extracurricular activities'] %}
               <li>{{ activity | markdown_links | safe }}</li>
@@ -48,7 +48,7 @@
         {% endif %}
         {% if edu['Relevant projects'] %}
           <div class="edu-detail">
-            <strong>{{ "Relevant projects:" if lang == 'en' else "Proyectos relevantes:" }}</strong>
+            <strong>{{ "Relevant projects" if lang == 'en' else "Proyectos relevantes" }}</strong>
             <ul>
             {% for r_proj in edu['Relevant projects'] %}
               <li>{{ r_proj | markdown_links | safe }}</li>
@@ -119,22 +119,22 @@
     {% if courses %}
     <section class="courses">
       <h2>{{ ui.section_courses }}</h2>
-      <p class="bottom-paragraph">
+      <ul class="bottom-list">
         {% for course in courses %}
-        {{ course | markdown_links | safe }}{% if not loop.last %}, {% endif %}
+        <li>{{ course | markdown_links | safe }}</li>
         {% endfor %}
-      </p>
+      </ul>
     </section>
     {% endif %}
 
     {% if certifications %}
     <section class="certifications">
       <h2>{{ ui.section_certifications }}</h2>
-      <p class="bottom-paragraph">
+      <ul class="bottom-list">
         {% for cert in certifications %}
-        {{ cert | markdown_links | safe }}{% if not loop.last %}, {% endif %}
+        <li>{{ cert | markdown_links | safe }}</li>
         {% endfor %}
-      </p>
+      </ul>
     </section>
     {% endif %}
   </div>

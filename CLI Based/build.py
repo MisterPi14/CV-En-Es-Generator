@@ -109,9 +109,9 @@ def load_cv_data():
 def markdown_links(text: str) -> str:
     if not isinstance(text, str):
         return text
-    return re.sub(r'\[([^\]]+)\]\((https?://[^\)]+)\)', r'<a href="\2" target="_blank">\1</a>', text)
+    return re.sub(r'\[([^\]]+)\]\s*\((https?://[^\)]+)\)', r'<a href="\2" target="_blank">\1</a>', text)
 
-def render_to_pdf(data: dict, lang: str):
+def render_to_pdf(data: dict, lang: str, output_name: str = None):
     """Renderiza el CV a PDF (si WeasyPrint funciona) o genera fallback HTML.
 
     Si WeasyPrint no está disponible (falta libgobject/pango en Windows u otra dependencia),
@@ -130,7 +130,10 @@ def render_to_pdf(data: dict, lang: str):
         **data
     )
 
-    output_file = BASE_DIR / f"{OUTPUT_PREFIX}{lang}.pdf"
+    if output_name:
+        output_file = BASE_DIR / output_name
+    else:
+        output_file = BASE_DIR / f"{OUTPUT_PREFIX}{lang}.pdf"
 
     if WEASYPRINT_AVAILABLE:
         try:
@@ -222,14 +225,18 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
         if 'role' in exp: exp['role'] = t(exp['role'])
         if 'company' in exp: exp['company'] = t(exp['company'])
         if 'description' in exp: exp['description'] = t(exp['description'])
+        if 'location' in exp: exp['location'] = t(exp['location'])
+        if 'period' in exp: exp['period'] = t(exp['period'])
 
     for proj in translated.get('projects', []):
         if 'title' in proj: proj['title'] = t(proj['title'])
         if 'description' in proj: proj['description'] = t(proj['description'])
+        if 'period' in proj: proj['period'] = t(proj['period'])
             
     for edu in translated.get('education', []):
         if 'degree' in edu: edu['degree'] = t(edu['degree'])
         if 'institution' in edu: edu['institution'] = t(edu['institution'])
+        if 'period' in edu: edu['period'] = t(edu['period'])
         if 'Relevant subjects' in edu: edu['Relevant subjects'] = t(edu['Relevant subjects'])
         if 'Extracurricular activities' in edu:
             edu['Extracurricular activities'] = [t(c) for c in edu['Extracurricular activities']]
@@ -250,6 +257,11 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
 def main():
     data = load_cv_data()
     
+    print("\nOpciones:")
+    print("1.- Continuar sin traducir (generar PDF solo en idioma base)")
+    print("2.- Continuar con traducción (generar PDFs en español e inglés)")
+    opcion = input("Elige una opción (1 o 2) [default 2]: ").strip()
+
     summary_text = data.get('summary', '')
     if not summary_text:
         work = data.get('work_experience', [])
@@ -258,16 +270,23 @@ def main():
         edu = data.get('education', [])
         summary_text = edu[0].get('degree', '') if edu else 'es'
 
-    source_lang = detect_language(summary_text)
-    print(f"Idioma base detectado: {source_lang}")
-
-    for lang in ["es", "en"]:
-        if lang == source_lang:
-            data_lang = data
-        else:
-            data_lang = translate_cv_data(data, lang)
-            
-        render_to_pdf(data_lang, lang)
+    if opcion == '1':
+        print("Generando resume.pdf sin traducir...")
+        # Heurística rápida interna solo para cargar la interfaz web en jinja2
+        en_indicators = [" the ", " and ", " of ", " with ", " for "]
+        source_lang = "en" if any(ind in f" {summary_text.lower()} " for ind in en_indicators) else "es"
+        render_to_pdf(data, source_lang, "resume.pdf")
+    else:
+        source_lang = detect_language(summary_text)
+        print(f"Idioma base detectado: {source_lang}")
+        
+        for lang in ["es", "en"]:
+            if lang == source_lang:
+                data_lang = data
+            else:
+                data_lang = translate_cv_data(data, lang)
+                
+            render_to_pdf(data_lang, lang)
 
 if __name__ == "__main__":
     try:
