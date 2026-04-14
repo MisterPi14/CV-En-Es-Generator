@@ -14,13 +14,13 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
+  font-size: 10px;
   /* Reduced for single page fit */
   line-height: 1.25;
 }
 
 body {
   max-width: 8.27in;
-  font-size: 10px;
   padding: 10px 20px 10px 20px;
   margin: 0 auto;
   box-sizing: border-box;
@@ -133,6 +133,39 @@ section h2 {
 .job-desc li {
   margin-bottom: 1px;
   text-align: justify;
+}
+
+.project-lead {
+  margin: 2px 0 0 0;
+  text-align: justify;
+}
+
+.project-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: start;
+}
+
+.project-header .role-company {
+  display: block;
+  min-width: 0;
+}
+
+.project-header .role {
+  display: inline;
+  overflow-wrap: anywhere;
+}
+
+.project-header .period {
+  white-space: nowrap;
+  text-align: right;
+  transform: translateX(-6pt);
+}
+
+.experience .job-header .period {
+  white-space: nowrap;
+  transform: translateX(-6pt);
 }
 
 .edu-item {
