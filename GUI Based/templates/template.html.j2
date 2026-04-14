@@ -51,20 +51,7 @@
             <strong>{{ "Relevant projects" if lang == 'en' else "Proyectos relevantes" }}</strong>
             <ul>
             {% for r_proj in edu['Relevant projects'] %}
-              {% if r_proj is mapping %}
-                <li>
-                  {{ r_proj.title | markdown_links | safe }}
-                  {% if r_proj.subitems %}
-                    <ul>
-                    {% for sub_proj in r_proj.subitems %}
-                      <li>{{ sub_proj | markdown_links | safe }}</li>
-                    {% endfor %}
-                    </ul>
-                  {% endif %}
-                </li>
-              {% else %}
-                <li>{{ r_proj | markdown_links | safe }}</li>
-              {% endif %}
+              <li>{{ r_proj | markdown_links | safe }}</li>
             {% endfor %}
             </ul>
           </div>
@@ -95,21 +82,15 @@
       <h2>{{ ui.section_projects }}</h2>
       {% for proj in projects %}
       <div class="job">
-        <div class="job-header project-header">
+        <div class="job-header">
           <div class="role-company"><span class="role">{{ proj.title | markdown_links | safe }}</span></div>
           <div class="period">{{ proj.period }}</div>
         </div>
-        {% set proj_lines = proj.description.strip().split('\n') %}
-        {% if proj_lines and proj_lines[0].strip() %}
-          <p class="project-lead">{{ proj_lines[0] | markdown_links | safe }}</p>
-        {% endif %}
-        {% if proj_lines|length > 1 %}
-          <ul class="job-desc">
-            {% for line in proj_lines[1:] %}
-              {% if line.strip() %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
-            {% endfor %}
-          </ul>
-        {% endif %}
+        <ul class="job-desc">
+          {% for line in proj.description.strip().split('\n') %}
+            {% if line %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
+          {% endfor %}
+        </ul>
       </div>
       {% endfor %}
     </section>
