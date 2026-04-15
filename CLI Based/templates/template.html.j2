@@ -13,7 +13,10 @@
   <header class="cv-header">
     <h1 class="name">{{ personal_info.name }}</h1>
     <div class="contact-bar">
-      {% if personal_info.phone %}<div class="contact-item"><i class="fa-solid fa-phone"></i><span>{{ personal_info.phone }}</span></div>{% endif %}
+      {% if personal_info.phone %}
+        {% set whatsapp_phone = personal_info.phone | replace('+', '') | replace(' ', '') | replace('-', '') | replace('(', '') | replace(')', '') %}
+        <div class="contact-item"><i class="fa-solid fa-phone"></i><span><a href="https://wa.me/{{ whatsapp_phone }}" target="_blank" rel="noopener noreferrer">{{ personal_info.phone }}</a></span></div>
+      {% endif %}
       {% if personal_info.email %}<div class="contact-item"><i class="fa-solid fa-envelope"></i><span><a href="mailto:{{ personal_info.email }}">{{ personal_info.email }}</a></span></div>{% endif %}
       {% if personal_info.linkedin_url %}
         {% set linkedin_user = personal_info.name.title() %}

@@ -63,16 +63,29 @@ def save_yaml_data(data: dict, file_path: Path):
         return False
 
 
-def run_setup_and_build(model: str, name_size: str, body_size: str, yaml_file: Path, lang: str, no_translate: bool = False, callback=None):
+def run_setup_and_build(model: str, name_size: str, body_size: str, yaml_file: Path, lang: str, no_translate: bool = False, callback=None, stream_callback=None):
     def thread_target():
         try:
             setup_cmd = f'bash "{SETUP_SCRIPT}"' if os.name != 'nt' else f'cmd /c "{SETUP_SCRIPT}"'
-            result = subprocess.run(setup_cmd, shell=True, capture_output=True, text=True, cwd=str(BASE_DIR))
             
-            if result.returncode != 0:
-                if callback:
-                    callback(f"Setup error: {result.stderr}", True)
-                return
+            if stream_callback:
+                proc = subprocess.Popen(setup_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=str(BASE_DIR))
+                for line in iter(proc.stdout.readline, ''):
+                    if line:
+                        stream_callback(line.rstrip())
+                    if proc.poll() is not None:
+                        break
+                proc.wait()
+                if proc.returncode != 0:
+                    err = proc.stderr.read()
+                    callback(f"Setup error: {err}", True) if callback else None
+                    return
+            else:
+                result = subprocess.run(setup_cmd, shell=True, capture_output=True, text=True, cwd=str(BASE_DIR))
+                if result.returncode != 0:
+                    if callback:
+                        callback(f"Setup error: {result.stderr}", True)
+                    return
             
             build_cmd = [
                 sys.executable,
@@ -87,15 +100,31 @@ def run_setup_and_build(model: str, name_size: str, body_size: str, yaml_file: P
             if no_translate:
                 build_cmd.append("--no-translate")
             
-            result = subprocess.run(build_cmd, capture_output=True, text=True, cwd=str(BASE_DIR))
-            
-            if result.returncode != 0:
+            if stream_callback:
+                proc = subprocess.Popen(build_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=str(BASE_DIR))
+                for line in iter(proc.stdout.readline, ''):
+                    if line:
+                        stream_callback(line.rstrip())
+                    if proc.poll() is not None:
+                        break
+                proc.wait()
+                if proc.returncode != 0:
+                    err = proc.stderr.read()
+                    callback(f"Build error: {err}", True) if callback else None
+                    return
+                
                 if callback:
-                    callback(f"Build error: {result.stderr}", True)
-                return
-            
-            if callback:
-                callback(result.stdout, False)
+                    callback("Generación completada", False)
+            else:
+                result = subprocess.run(build_cmd, capture_output=True, text=True, cwd=str(BASE_DIR))
+                
+                if result.returncode != 0:
+                    if callback:
+                        callback(f"Build error: {result.stderr}", True)
+                    return
+                
+                if callback:
+                    callback(result.stdout, False)
                 
         except Exception as e:
             if callback:
@@ -286,8 +315,11 @@ class FormWindow(ctk.CTkToplevel):
             ctk.CTkLabel(self.fields_frame, text=label, font=ctk.CTkFont(size=11)).grid(
                 row=row, column=0, padx=5, pady=3, sticky="nw")
             
-            text_box = ctk.CTkTextbox(self.fields_frame, height=80 if 'description' in label or 'summary' in label.lower() else 30,
-                                   wrap="word" if 'description' in label or 'summary' in label.lower() else None)
+            is_large_field = 'description' in label.lower() or 'summary' in label.lower()
+            is_medium_field = 'degree' in label.lower() or 'role' in label.lower() or 'title' in label.lower()
+            text_height = 150 if is_large_field else (80 if is_medium_field else 50)
+            text_box = ctk.CTkTextbox(self.fields_frame, height=text_height,
+                                   wrap="word" if is_large_field or is_medium_field else None)
             text_box.insert("1.0", value)
             text_box.grid(row=row, column=1, padx=5, pady=3, sticky="ew")
             
@@ -429,7 +461,8 @@ class MainWindow(ctk.CTk):
             yaml_file=CV_FILE,
             lang='es',
             no_translate=True,
-            callback=on_complete
+            callback=on_complete,
+            stream_callback=progress.append_log
         )
         
         def check_thread():
@@ -494,7 +527,8 @@ class MainWindow(ctk.CTk):
             yaml_file=CV_FILE,
             lang='both',
             no_translate=False,
-            callback=on_complete
+            callback=on_complete,
+            stream_callback=progress.append_log
         )
         
         def check_thread():
@@ -559,9 +593,10 @@ class MainWindow(ctk.CTk):
             name_size=form.result['name_size'],
             body_size=form.result['body_size'],
             yaml_file=temp_translated,
-            lang='both',
+            lang='es',
             no_translate=True,
-            callback=on_complete
+            callback=on_complete,
+            stream_callback=progress.append_log
         )
         
         def check_thread():
