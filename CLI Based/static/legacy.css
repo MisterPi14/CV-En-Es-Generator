@@ -14,7 +14,7 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
-  font-size: 9.7px;
+  font-size: 9px;
   /* Reduced for single page fit */
   line-height: 1.25;
 }
