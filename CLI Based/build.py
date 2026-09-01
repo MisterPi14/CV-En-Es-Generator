@@ -37,15 +37,11 @@ BASE_DIR = Path(__file__).parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
-# Archivos fuente estandarizados: mismo contenido y mismo esquema en dos
-# idiomas. Elegir uno evita pasar por Ollama para ese idioma.
-SOURCE_FILES = {
-    "en": BASE_DIR / "resume.en.yaml",
-    "es": BASE_DIR / "resume.es.yaml",
-}
-# Base historica de un solo idioma; se usa si no hay archivo estandarizado.
-CV_FILE = BASE_DIR / "resume.yaml"
-OUTPUT_PREFIX = "resume_"
+# Cualquier *.yaml del directorio es una fuente valida: los escritos a mano
+# (resume.es.yaml, resume.en.yaml) y los derivados que escribe el modo
+# translate (resume.<lang>.<modelo>.yaml). `discover_yamls()` los lista.
+CV_FILE = BASE_DIR / "resume.yaml"   # default de load_cv_data si no se pasa ruta
+OUTPUT_PREFIX = "resume_"            # solo para nombres de salida sin --output
 
 # Registro de templates ------------------------------------------------------
 # Cada entrada concentra plantilla Jinja, hoja de estilo, márgenes de impresión
@@ -87,16 +83,23 @@ MM_TO_PX = 96 / 25.4
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Genera el CV en PDF a partir de resume.yaml')
+    parser = argparse.ArgumentParser(
+        description='Genera YAMLs traducidos del CV, o PDFs a partir de cualquiera de ellos')
+    parser.add_argument('--mode', choices=['translate', 'pdf'], default=None,
+                        help="'translate' escribe un YAML nuevo traducido; 'pdf' renderiza "
+                             'uno existente (si se omite, se pregunta en la terminal)')
+    parser.add_argument('--input', default=None,
+                        help='YAML de entrada: nombre o ruta. Si se omite, se listan los '
+                             'del directorio para elegir')
+    parser.add_argument('--from', dest='from_lang', choices=['es', 'en'], default=None,
+                        help='Idioma del YAML de entrada (si se omite, se deduce del nombre)')
+    parser.add_argument('--to', dest='to_lang', choices=['es', 'en'], default=None,
+                        help='modo translate: idioma destino de la traduccion')
     parser.add_argument('--template', choices=sorted(TEMPLATES.keys()), default=None,
-                        help='Template a usar (si se omite, se pregunta en la terminal)')
-    parser.add_argument('--lang', choices=['es', 'en', 'both'], default=None,
-                        help='Idioma(s) a generar')
-    parser.add_argument('--source', choices=sorted(SOURCE_FILES.keys()), default=None,
-                        help='YAML de origen: en -> resume.en.yaml, es -> resume.es.yaml '
-                             '(si se omite, se pregunta en la terminal)')
-    parser.add_argument('--no-translate', action='store_true',
-                        help='No usar Ollama: renderiza el YAML tal cual esta')
+                        help='modo pdf: template a usar')
+    parser.add_argument('--output', default=None,
+                        help='Nombre del archivo de salida (si se omite, se deriva del '
+                             'YAML de entrada)')
     return parser.parse_args()
 
 
@@ -175,38 +178,105 @@ def load_cv_data(path: Path = None):
     return data
 
 
-def resolve_source(preselected: str = None) -> tuple:
-    """Elige el YAML de origen y devuelve (idioma, ruta).
+def dump_cv_data(data: dict, path: Path) -> None:
+    """Escribe el CV traducido como YAML legible y editable a mano.
 
-    Con un archivo estandarizado el idioma base se conoce de antemano, asi que
-    no hace falta preguntarselo a Ollama (`detect_language`).
+    Los `description` multilinea se emiten como bloque literal (`|`) para que el
+    archivo derivado se lea igual que los escritos a mano; con el estilo por
+    defecto saldrian como una sola linea con `\\n` incrustados.
     """
-    available = {lang: p for lang, p in SOURCE_FILES.items() if p.exists()}
+    class _Dumper(yaml.SafeDumper):
+        pass
 
-    if not available:
-        print(f"[FUENTE] Sin archivos estandarizados; se usa {CV_FILE.name}.")
-        return None, CV_FILE
+    def _str_representer(dumper, value):
+        style = '|' if '\n' in value else None
+        return dumper.represent_scalar('tag:yaml.org,2002:str', value, style=style)
 
+    _Dumper.add_representer(str, _str_representer)
+
+    with path.open('w', encoding='utf-8') as f:
+        f.write(f"# Generado por build.py --mode translate\n"
+                f"# Modelo traductor: {OLLAMA_MODEL}\n"
+                f"# NO editar a mano esperando que se regenere igual: cada corrida\n"
+                f"# del modelo produce una redaccion ligeramente distinta.\n\n")
+        yaml.dump(data, f, Dumper=_Dumper, allow_unicode=True,
+                  sort_keys=False, default_flow_style=False, width=4096)
+
+
+# --- Descubrimiento y seleccion de archivos --------------------------------
+# Cualquier *.yaml del directorio sirve de entrada, tanto los escritos a mano
+# como los derivados que produce el modo translate.
+LANG_LABELS = {"es": "español", "en": "inglés"}
+
+
+def discover_yamls() -> list:
+    return sorted(BASE_DIR.glob('*.yaml'), key=lambda p: p.name)
+
+
+def lang_from_name(path: Path):
+    """Deduce el idioma del nombre: resume.en.<lo-que-sea>.yaml -> 'en'."""
+    for part in path.name.lower().split('.'):
+        if part in LANG_LABELS:
+            return part
+    return None
+
+
+def model_slug(model: str = None) -> str:
+    """Tag de Ollama apto para nombre de archivo: 'gpt-oss:20b-cloud' -> 'gpt-oss-20b-cloud'.
+
+    Se conserva el tag completo, sufijo de transporte incluido, para poder
+    distinguir una traduccion hecha en local de una hecha en la nube.
+    """
+    return re.sub(r'[^A-Za-z0-9._-]+', '-', (model or OLLAMA_MODEL)).strip('-')
+
+
+def choose_yaml(preselected: str = None, prompt: str = "YAML de entrada") -> Path:
+    """Elige un YAML del directorio: por flag o listando los disponibles."""
     if preselected:
-        if preselected in available:
-            return preselected, available[preselected]
-        print(f"[FUENTE][WARN] No existe {SOURCE_FILES[preselected].name}; se usa {CV_FILE.name}.")
-        return None, CV_FILE
+        candidate = Path(preselected)
+        if not candidate.is_absolute():
+            candidate = BASE_DIR / preselected
+        if not candidate.exists():
+            raise FileNotFoundError(candidate)
+        return candidate
 
-    names = sorted(available.keys())
-    etiquetas = {"en": "inglés", "es": "español"}
-    print("\nYAML de origen:")
+    files = discover_yamls()
+    if not files:
+        raise FileNotFoundError(f"No hay ningun *.yaml en {BASE_DIR}")
+
+    print(f"\n{prompt}:")
+    for i, path in enumerate(files, start=1):
+        lang = lang_from_name(path)
+        etiqueta = LANG_LABELS.get(lang, "idioma sin declarar")
+        print(f"{i}.- {path.name:<40} ({etiqueta})")
+
+    choice = input(f"Elige una opción (1-{len(files)}) [default 1]: ").strip()
+    if choice.isdigit() and 1 <= int(choice) <= len(files):
+        return files[int(choice) - 1]
+    return files[0]
+
+
+def choose_lang(prompt: str, default: str = None) -> str:
+    names = sorted(LANG_LABELS.keys())
+    default = default if default in names else names[0]
+    print(f"\n{prompt}:")
     for i, lang in enumerate(names, start=1):
-        print(f"{i}.- {available[lang].name:<18} ({etiquetas.get(lang, lang)})")
-    print(f"{len(names) + 1}.- {CV_FILE.name:<18} (base histórica, idioma detectado)")
-
-    choice = input(f"Elige una opción (1-{len(names) + 1}) [default 1]: ").strip()
-    if choice.isdigit() and int(choice) == len(names) + 1:
-        return None, CV_FILE
+        marca = "  [default]" if lang == default else ""
+        print(f"{i}.- {lang}  ({LANG_LABELS[lang]}){marca}")
+    choice = input(f"Elige una opción (1-{len(names)}) [default {names.index(default) + 1}]: ").strip()
     if choice.isdigit() and 1 <= int(choice) <= len(names):
-        lang = names[int(choice) - 1]
-        return lang, available[lang]
-    return names[0], available[names[0]]
+        return names[int(choice) - 1]
+    return default
+
+
+def choose_mode(preselected: str = None) -> str:
+    if preselected:
+        return preselected
+    print("\nQué quieres hacer:")
+    print("1.- Traducir un YAML y guardar el resultado como otro YAML")
+    print("2.- Generar un PDF a partir de un YAML existente")
+    choice = input("Elige una opción (1 o 2) [default 2]: ").strip()
+    return 'translate' if choice == '1' else 'pdf'
 
 
 # --- Filtro de contenido por vacante ---------------------------------------
@@ -415,7 +485,7 @@ def render_to_pdf(data: dict, lang: str, output_name: str = None, template_name:
         return
 
     # Último fallback: guardar HTML
-    fallback_html = BASE_DIR / f"{OUTPUT_PREFIX}{template_name}_{lang}.html"
+    fallback_html = output_file.with_suffix('.html')
     fallback_html.write_text(html_content, encoding='utf-8')
     if not WEASYPRINT_AVAILABLE:
         print(f"[WARN] WeasyPrint no disponible: {WEASYPRINT_IMPORT_ERROR!r}")
@@ -847,65 +917,78 @@ def choose_template(preselected: str = None) -> str:
     return DEFAULT_TEMPLATE
 
 
-def main():
-    args = parse_args()
+def resolve_input_lang(path: Path, preselected: str = None) -> str:
+    """Idioma del YAML de entrada: flag, nombre del archivo, o pregunta.
 
-    # El archivo estandarizado ya declara su idioma: no hay que detectarlo.
-    known_lang, cv_path = resolve_source(args.source)
-    print(f"Origen: {cv_path.name}" + (f" (idioma {known_lang})" if known_lang else ""))
-    data = load_cv_data(cv_path)
+    Se prefiere el nombre a `detect_language()` porque no cuesta una llamada al
+    modelo; el usuario decide solo cuando el nombre no lo declara.
+    """
+    if preselected:
+        return preselected
+    from_name = lang_from_name(path)
+    if from_name:
+        print(f"Idioma de {path.name}: {from_name} (declarado en el nombre)")
+        return from_name
+    return choose_lang(f"{path.name} no declara idioma en su nombre. ¿En qué idioma está?")
 
-    # Se filtra antes de traducir: lo apagado no se envia al modelo.
+
+def run_translate(args) -> None:
+    """Traduce un YAML completo y lo guarda como un YAML nuevo."""
+    src_path = choose_yaml(args.input, "YAML base a traducir")
+    src_lang = resolve_input_lang(src_path, args.from_lang)
+
+    other = 'en' if src_lang == 'es' else 'es'
+    dst_lang = args.to_lang or choose_lang("Idioma destino de la traducción", default=other)
+    if dst_lang == src_lang:
+        print(f"[ERROR] El origen ya está en '{src_lang}'; elige otro idioma destino.")
+        sys.exit(1)
+
+    out_path = BASE_DIR / (args.output or f"resume.{dst_lang}.{model_slug()}.yaml")
+    if out_path.exists():
+        print(f"[WARN] {out_path.name} ya existe y se va a sobrescribir.")
+
+    print(f"\nOrigen : {src_path.name} ({src_lang})")
+    print(f"Destino: {out_path.name} ({dst_lang})")
+    print(f"Modelo : {OLLAMA_MODEL}")
+
+    # A diferencia del modo pdf, aqui NO se aplica prune_hidden: el archivo
+    # derivado debe ser un espejo fiel del base, con sus marcas `include`
+    # intactas, para poder filtrarlo despues al generar cada PDF.
+    data = load_cv_data(src_path)
+    translated = translate_cv_data(data, dst_lang)
+    dump_cv_data(translated, out_path)
+    print(f"Escrito {out_path.name}")
+
+
+def run_pdf(args) -> None:
+    """Renderiza a PDF cualquier YAML del directorio."""
+    src_path = choose_yaml(args.input, "YAML a renderizar")
+    lang = resolve_input_lang(src_path, args.from_lang)
+    template_name = choose_template(args.template)
+    print(f"Template seleccionado: {template_name}")
+
+    data = load_cv_data(src_path)
+
+    # Se filtra al renderizar, no al traducir: cada PDF decide que imprime.
     hidden = []
     data = prune_hidden(data, hidden)
     if hidden:
         print(f"[FILTRO] {len(hidden)} elementos ocultos (include: false): {', '.join(hidden)}")
 
-    template_name = choose_template(args.template)
-    print(f"Template seleccionado: {template_name}")
+    # El nombre del PDF arrastra el del YAML para no perder de vista con que
+    # fuente (y con que modelo, si es derivado) se genero.
+    output_name = args.output or f"{src_path.stem}.{template_name}.pdf"
+    print(f"Generando {output_name}...")
+    render_to_pdf(data, lang, output_name, template_name)
 
-    # Modo no interactivo cuando vienen flags de idioma o traducción.
-    if args.no_translate or args.lang:
-        translate = not args.no_translate
-        languages = ['es', 'en'] if args.lang in (None, 'both') else [args.lang]
+
+def main():
+    args = parse_args()
+    mode = choose_mode(args.mode)
+    if mode == 'translate':
+        run_translate(args)
     else:
-        print("\nOpciones:")
-        print("1.- Continuar sin traducir (generar PDF solo en idioma base)")
-        print("2.- Continuar con traducción (generar PDFs en español e inglés)")
-        opcion = input("Elige una opción (1 o 2) [default 2]: ").strip()
-        translate = opcion != '1'
-        languages = ['es', 'en']
-
-    summary_text = data.get('summary', '')
-    if not summary_text:
-        work = data.get('work_experience', [])
-        summary_text = work[0].get('description', '') if work else ''
-    if not summary_text:
-        edu = data.get('education', [])
-        summary_text = edu[0].get('degree', '') if edu else 'es'
-
-    if not translate:
-        print(f"Generando {OUTPUT_PREFIX}{template_name}.pdf sin traducir...")
-        if known_lang:
-            source_lang = known_lang
-        else:
-            # Heurística rápida interna solo para cargar la interfaz web en jinja2
-            en_indicators = [" the ", " and ", " of ", " with ", " for "]
-            source_lang = "en" if any(ind in f" {summary_text.lower()} " for ind in en_indicators) else "es"
-        render_to_pdf(data, source_lang, f"{OUTPUT_PREFIX}{template_name}.pdf", template_name)
-    else:
-        # Con un archivo estandarizado el idioma ya se conoce: se ahorra la
-        # llamada a Ollama de detect_language.
-        source_lang = known_lang or detect_language(summary_text)
-        print(f"Idioma base: {source_lang}")
-
-        for lang in languages:
-            if lang == source_lang:
-                data_lang = data
-            else:
-                data_lang = translate_cv_data(data, lang)
-
-            render_to_pdf(data_lang, lang, None, template_name)
+        run_pdf(args)
 
 
 if __name__ == "__main__":
