@@ -1,9 +1,12 @@
 {#- Cursos y certificaciones aceptan string plano (forma heredada) o mapping
-    {name, issuer, year, url}. Este macro normaliza ambas formas. -#}
+    {name, issuer, year, url, issuer_url}. Este macro normaliza ambas formas.
+    'issuer_url' enlaza la plataforma emisora (Coursera, Platzi): es el lugar
+    semanticamente correcto para esos sitios de terceros, que antes colgaban
+    sueltos de personal_info.website_or_portfolio. -#}
 {% macro credential(item) -%}
   {%- if item is mapping -%}
     {%- if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.name }}</a>{% else %}{{ item.name }}{% endif -%}
-    {%- if item.issuer %} ({{ item.issuer }}{% if item.year %}, {{ item.year }}{% endif %}){% elif item.year %} ({{ item.year }}){% endif -%}
+    {%- if item.issuer %} ({% if item.issuer_url %}<a href="{{ item.issuer_url }}" target="_blank">{{ item.issuer }}</a>{% else %}{{ item.issuer }}{% endif %}{% if item.year %}, {{ item.year }}{% endif %}){% elif item.year %} ({{ item.year }}){% endif -%}
   {%- else -%}
     {{- item | markdown_links | safe -}}
   {%- endif -%}

@@ -1,0 +1,247 @@
+{# Template 'capitalone' — derivado de 'generation'.
+   Cubre las cinco secciones exigidas por ResumeShape.md, en su orden y con sus
+   nombres: Education, Technical Experience, Technical Projects, Technical
+   Skills, Achievements & Extracurriculars.
+   Que elemento se imprime se decide en resume.yaml con `include: true/false`,
+   filtrado por prune_hidden() en build.py antes de renderizar. #}
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ personal_info.name }} - CV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="static/{{ css }}" />
+</head>
+<body>
+  <header class="cv-header">
+    <h1 class="name">{{ personal_info.name }}</h1>
+    {% if personal_info.title %}<div class="headline">{{ personal_info.title }}</div>{% endif %}
+
+    {# Linea de contacto: los separadores "|" los pone el CSS entre items #}
+    <div class="contact-line">
+      {% if personal_info.phone %}
+        {% set whatsapp_phone = personal_info.phone | replace('+', '') | replace(' ', '') | replace('-', '') | replace('(', '') | replace(')', '') %}
+        <span class="contact-item"><a href="https://wa.me/{{ whatsapp_phone }}" target="_blank" rel="noopener noreferrer">{{ personal_info.phone }}</a></span>
+      {% endif %}
+      {% if personal_info.email %}<span class="contact-item"><a href="mailto:{{ personal_info.email }}">{{ personal_info.email }}</a></span>{% endif %}
+      {% if personal_info.location %}<span class="contact-item">{{ personal_info.location }}</span>{% endif %}
+      {% if personal_info.linkedin_url %}<span class="contact-item"><a href="{{ personal_info.linkedin_url }}" target="_blank">LinkedIn</a></span>{% endif %}
+      {% if personal_info.github_url %}<span class="contact-item"><a href="{{ personal_info.github_url }}" target="_blank">Github</a></span>{% endif %}
+      {% if personal_info.portfolio_url %}<span class="contact-item"><a href="{{ personal_info.portfolio_url }}" target="_blank">{{ ui.label_portfolio }}</a></span>{% endif %}
+    </div>
+  </header>
+
+  {% if summary %}
+  <section class="block">
+    <h2>{{ ui.section_profile }}</h2>
+    <p class="paragraph">{{ summary | markdown_links | safe }}</p>
+  </section>
+  {% endif %}
+
+  {# --- 1. Education ------------------------------------------------------
+     ResumeShape §1 pide institucion, carrera, fecha de graduacion y
+     'relevant coursework'. A diferencia de 'generation', aqui si se imprimen
+     las materias relevantes y el promedio. #}
+  {% if education %}
+  <section class="block">
+    <h2>{{ ui.section_education_gen }}</h2>
+    {% for edu in education %}
+    <div class="entry">
+      <div class="entry-title">{{ edu.degree | markdown_links | safe }} | {{ edu.institution | markdown_links | safe }}{% if edu.period %} <span class="period">({{ edu.period }})</span>{% endif %}</div>
+      {% if edu.gpa %}<div class="meta">{{ ui.label_gpa }}: {{ edu.gpa }}</div>{% endif %}
+      {% if edu['Relevant subjects'] %}
+        <div class="meta"><span class="meta-label">{{ ui.label_coursework }}:</span> {{ edu['Relevant subjects'] | markdown_links | safe }}</div>
+      {% endif %}
+      {% if edu['Relevant projects'] %}
+      <ul class="bullets">
+        {% for proj in edu['Relevant projects'] %}
+          {% if proj is mapping %}
+          <li>{{ proj.title | markdown_links | safe }}
+            {% if proj.subitems %}
+            <ul class="bullets sub">
+              {% for sub in proj.subitems %}<li>{{ sub | markdown_links | safe }}</li>{% endfor %}
+            </ul>
+            {% endif %}
+          </li>
+          {% else %}
+          <li>{{ proj | markdown_links | safe }}</li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# --- 2. Technical Experience ------------------------------------------ #}
+  {% if work_experience %}
+  <section class="block">
+    <h2>{{ ui.section_technical_experience }}</h2>
+    {% for job in work_experience %}
+    <div class="entry">
+      <div class="entry-title">{{ job.role | default(job.title) | markdown_links | safe }} | {{ job.company | markdown_links | safe }}{% if job.period %} <span class="period">({{ job.period }})</span>{% endif %}</div>
+      <ul class="bullets">
+        {% for line in job.description.strip().split('\n') %}
+          {% if line.strip() %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# --- 3. Technical Projects -------------------------------------------- #}
+  {% if projects %}
+  <section class="block">
+    <h2>{{ ui.section_technical_projects }}</h2>
+    {% for proj in projects %}
+    <div class="entry">
+      <div class="entry-title">{{ proj.title | markdown_links | safe }}{% if proj.period %} <span class="period">({{ proj.period }})</span>{% endif %}</div>
+      <ul class="bullets">
+        {% for line in proj.description.strip().split('\n') %}
+          {% if line.strip() %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# --- 4. Technical Skills ----------------------------------------------
+     ResumeShape §4 pide distinguir lenguajes de frameworks y herramientas,
+     no una lista unica como hace 'generation'. #}
+  {% if skills is defined %}
+  <section class="block">
+    <h2>{{ ui.section_technical_skills }}</h2>
+    {% if skills.programming_languages %}
+    <div class="meta"><span class="meta-label">{{ ui.label_languages }}:</span> {{ skills.programming_languages | join(' | ') }}</div>
+    {% endif %}
+    {% if skills.technologies_and_frameworks %}
+    <div class="meta"><span class="meta-label">{{ ui.label_frameworks }}:</span> {{ skills.technologies_and_frameworks | join(' | ') }}</div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# --- 5. Certificaciones (seccion propia) ------------------------------- #}
+  {% if certifications %}
+  <section class="block">
+    <h2>{{ ui.section_certifications }}</h2>
+    <ul class="bullets">
+      {% for item in certifications %}
+        {% if item is mapping %}
+        <li><strong>{% if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.name }}</a>{% else %}{{ item.name }}{% endif %}</strong>
+          {%- if item.issuer %} | {% if item.issuer_url %}<a href="{{ item.issuer_url }}" target="_blank">{{ item.issuer }}</a>{% else %}{{ item.issuer }}{% endif %}{% endif %}
+          {%- if item.year %} <span class="period">({{ item.year }})</span>{% endif %}</li>
+        {% else %}
+        <li>{{ item | markdown_links | safe }}</li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {# --- 6. Cursos (seccion propia) ---------------------------------------- #}
+  {% if courses %}
+  <section class="block">
+    <h2>{{ ui.section_courses }}</h2>
+    <ul class="bullets">
+      {% for item in courses %}
+        {% if item is mapping %}
+        <li><strong>{% if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.name }}</a>{% else %}{{ item.name }}{% endif %}</strong>
+          {%- if item.issuer %} | {% if item.issuer_url %}<a href="{{ item.issuer_url }}" target="_blank">{{ item.issuer }}</a>{% else %}{{ item.issuer }}{% endif %}{% endif %}
+          {%- if item.year %} <span class="period">({{ item.year }})</span>{% endif %}</li>
+        {% else %}
+        <li>{{ item | markdown_links | safe }}</li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {# --- 7. Extracurriculares ---------------------------------------------
+     Hackathones, competencias, visitas academicas, clubes estudiantiles y
+     toda iniciativa fuera del aula. Certificaciones y cursos van aparte. #}
+  {% set student_clubs = [] %}
+  {% for edu in education | default([], true) %}
+    {% for act in edu['Extracurricular activities'] | default([], true) %}
+      {% set _ = student_clubs.append(act) %}
+    {% endfor %}
+  {% endfor %}
+
+  {% if extracurriculars or hackathons or academic_visits or student_clubs %}
+  <section class="block">
+    <h2>{{ ui.section_extracurriculars }}</h2>
+
+    {% if hackathons %}
+    <div class="meta-label">{{ ui.label_hackathons }}</div>
+    <ul class="bullets">
+      {% for item in hackathons %}
+      <li><strong>{% if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.name }}</a>{% else %}{{ item.name }}{% endif %}</strong>
+        {%- if item.achievement %} | {{ item.achievement | markdown_links | safe }}{% endif %}
+        {%- if item.period %} <span class="period">({{ item.period }})</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if academic_visits %}
+    <div class="meta-label">{{ ui.label_academic_visits }}</div>
+    <ul class="bullets">
+      {% for item in academic_visits %}
+      <li><strong>{% if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.institution }}</a>{% else %}{{ item.institution }}{% endif %}</strong>
+        {%- if item.focus %} | {{ item.focus | markdown_links | safe }}{% endif %}
+        {%- if item.period %} <span class="period">({{ item.period }})</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if student_clubs %}
+    <div class="meta-label">{{ ui.label_student_clubs }}</div>
+    <ul class="bullets">
+      {% for act in student_clubs %}<li>{{ act | markdown_links | safe }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if extracurriculars %}
+    <ul class="bullets">
+      {% for item in extracurriculars %}
+        {% if item is mapping %}
+        <li><strong>{{ item.exp | default(item.name) | markdown_links | safe }}</strong>
+          {%- if item.date %} <span class="period">({{ item.date }})</span>{% endif %}
+          {%- if item.desc or item.event %} — {{ (item.desc or item.event) | markdown_links | safe }}{% endif %}</li>
+        {% else %}
+        <li>{{ item | markdown_links | safe }}</li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# --- Extras que no exige ResumeShape pero ya existian en el YAML ------- #}
+  {% if skills is defined and skills.soft_skills %}
+  <section class="block">
+    <h2>{{ ui.section_soft_skills }}</h2>
+    <p class="inline-list">{{ skills.soft_skills | join(' | ') }}</p>
+  </section>
+  {% endif %}
+
+  {% if spoken_languages %}
+  <section class="block">
+    <h2>{{ ui.section_spoken_languages }}</h2>
+    <p class="inline-list">
+      {%- for spoken in spoken_languages -%}
+        {%- if not loop.first %} | {% endif -%}
+        {%- if spoken is mapping -%}
+          {{ spoken.language }}{% if spoken.level %} ({{ spoken.level }}){% endif %}
+        {%- else -%}
+          {{ spoken | markdown_links | safe }}
+        {%- endif -%}
+      {%- endfor -%}
+    </p>
+  </section>
+  {% endif %}
+</body>
+</html>

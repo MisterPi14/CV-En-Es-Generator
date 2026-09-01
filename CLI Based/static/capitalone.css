@@ -1,0 +1,173 @@
+/* Template 'capitalone' — derivado de generation.css.
+ * Cubre las cinco secciones de ResumeShape.md en una sola pagina.
+ *
+ * REGLA ESTRUCTURAL: el auto-ajuste de build.py (_fit_to_one_page) solo mueve
+ * la variable --fit-font. Por eso TODO tamano aqui debe ir en unidades
+ * relativas (em / unitless) y nunca en px absolutos: asi el documento entero
+ * reescala de forma proporcional hasta caber en una A4.
+ */
+
+:root {
+  --fit-font: 10px;
+  --text: #000;
+  --muted: #333;
+  --rule: #000;
+  --bg: #fff;
+}
+
+@page {
+  size: A4;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fit-font);
+  line-height: 1.28;
+}
+
+body {
+  box-sizing: border-box;
+}
+
+h1,
+h2 {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+/* Encabezado ------------------------------------------------------------- */
+
+.cv-header {
+  text-align: center;
+  margin-bottom: 0.5em;
+}
+
+h1.name {
+  font-size: 1.45em;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.headline {
+  font-size: 1.15em;
+  font-weight: 700;
+  margin-top: 0.15em;
+}
+
+.contact-line {
+  margin-top: 0.5em;
+  font-size: 1.05em;
+}
+
+/* Los separadores "|" se pintan entre items para no depender del template. */
+.contact-item + .contact-item::before {
+  content: "|";
+  margin: 0 0.45em;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.contact-item a {
+  text-decoration: underline;
+}
+
+/* Secciones -------------------------------------------------------------- */
+
+.block {
+  margin-top: 0.55em;
+}
+
+.block h2 {
+  font-size: 1.05em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding-bottom: 0.12em;
+  border-bottom: 0.25em solid var(--rule);
+  margin-bottom: 0.35em;
+}
+
+.paragraph,
+.inline-list {
+  margin: 0;
+  text-align: justify;
+}
+
+/* Entradas de proyecto y experiencia ------------------------------------- */
+
+.entry {
+  margin-bottom: 0.4em;
+}
+
+.entry:last-child {
+  margin-bottom: 0;
+}
+
+.entry-title {
+  font-weight: 700;
+  margin-bottom: 0.1em;
+}
+
+.period {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Vinetas ---------------------------------------------------------------- */
+
+.bullets {
+  margin: 0;
+  padding-left: 1.5em;
+}
+
+.bullets li {
+  margin-bottom: 0.08em;
+  text-align: justify;
+}
+
+.bullets li:last-child {
+  margin-bottom: 0;
+}
+
+.bullets a {
+  text-decoration: underline;
+}
+
+/* Lineas de apoyo: promedio, coursework, agrupadores de habilidades --------
+ * Todo en em, igual que el resto: el auto-ajuste solo mueve --fit-font.
+ */
+
+.meta {
+  margin: 0 0 0.1em 0;
+  text-align: justify;
+}
+
+.meta-label {
+  font-weight: 700;
+}
+
+/* Subgrupos dentro de la seccion de logros: mismo peso que una etiqueta,
+ * con aire arriba para separarlos de la lista anterior. */
+.block .meta-label {
+  display: block;
+  margin-top: 0.22em;
+  margin-bottom: 0.08em;
+}
+
+.block .meta-label:first-of-type {
+  margin-top: 0;
+}
+
+/* Vinetas anidadas (subitems de un proyecto academico) */
+.bullets .sub {
+  padding-left: 1.2em;
+  margin-top: 0.06em;
+}

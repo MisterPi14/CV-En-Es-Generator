@@ -1,4 +1,7 @@
 *.yaml
+/CLI Based/.archivos
+/CLI Based/CLAUDE.md
+/CLI Based/log.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ personal_info.name }} - CV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="static/{{ css }}" />
+</head>
+<body>
+  <header class="cv-header">
+    <h1 class="name">{{ personal_info.name }}</h1>
+    {% if personal_info.title %}<div class="headline">{{ personal_info.title }}</div>{% endif %}
+
+    {# Linea de contacto: los separadores "|" los pone el CSS entre items #}
+    <div class="contact-line">
+      {% if personal_info.phone %}
+        {% set whatsapp_phone = personal_info.phone | replace('+', '') | replace(' ', '') | replace('-', '') | replace('(', '') | replace(')', '') %}
+        <span class="contact-item"><a href="https://wa.me/{{ whatsapp_phone }}" target="_blank" rel="noopener noreferrer">{{ personal_info.phone }}</a></span>
+      {% endif %}
+      {% if personal_info.email %}<span class="contact-item"><a href="mailto:{{ personal_info.email }}">{{ personal_info.email }}</a></span>{% endif %}
+      {% if personal_info.location %}<span class="contact-item">{{ personal_info.location }}</span>{% endif %}
+      {% if personal_info.linkedin_url %}<span class="contact-item"><a href="{{ personal_info.linkedin_url }}" target="_blank">LinkedIn</a></span>{% endif %}
+      {% if personal_info.github_url %}<span class="contact-item"><a href="{{ personal_info.github_url }}" target="_blank">Github</a></span>{% endif %}
+      {% if personal_info.portfolio_url %}<span class="contact-item"><a href="{{ personal_info.portfolio_url }}" target="_blank">{{ ui.label_portfolio }}</a></span>{% endif %}
+    </div>
+  </header>
+
+  {% if summary %}
+  <section class="block">
+    <h2>{{ ui.section_profile }}</h2>
+    <p class="paragraph">{{ summary | markdown_links | safe }}</p>
+  </section>
+  {% endif %}
+
+  {% if skills is defined %}
+    {% set technical = (skills.programming_languages or []) + (skills.technologies_and_frameworks or []) %}
+    {% if technical %}
+    <section class="block">
+      <h2>{{ ui.section_technical_skills }}</h2>
+      <p class="inline-list">{{ technical | join(' | ') }}</p>
+    </section>
+    {% endif %}
+
+    {% if skills.soft_skills %}
+    <section class="block">
+      <h2>{{ ui.section_soft_skills }}</h2>
+      <p class="inline-list">{{ skills.soft_skills | join(' | ') }}</p>
+    </section>
+    {% endif %}
+  {% endif %}
+
+  {% if projects %}
+    {# Que proyectos se imprimen se decide en resume.yaml con `include: true/false`,
+       filtrado en build.py antes de renderizar. #}
+  <section class="block">
+    <h2>{{ ui.section_academic_project }}</h2>
+    {% for proj in projects %}
+    <div class="entry">
+      <div class="entry-title">{{ proj.title | markdown_links | safe }}{% if proj.period %} <span class="period">({{ proj.period }})</span>{% endif %}</div>
+      <ul class="bullets">
+        {% for line in proj.description.strip().split('\n') %}
+          {% if line.strip() %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if work_experience %}
+  <section class="block">
+    <h2>{{ ui.section_work }}</h2>
+    {% for job in work_experience %}
+    <div class="entry">
+      <div class="entry-title">{{ job.role | default(job.title) | markdown_links | safe }} | {{ job.company | markdown_links | safe }}{% if job.period %} <span class="period">({{ job.period }})</span>{% endif %}</div>
+      <ul class="bullets">
+        {% for line in job.description.strip().split('\n') %}
+          {% if line.strip() %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if education %}
+  <section class="block">
+    <h2>{{ ui.section_education_gen }}</h2>
+    <ul class="bullets">
+      {% for edu in education %}
+      <li>{{ edu.degree | markdown_links | safe }} | {{ edu.institution | markdown_links | safe }}{% if edu.period %} <span class="period">({{ edu.period }})</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% set credentials = (certifications if certifications is defined else []) + (courses if courses is defined else []) %}
+  {% if credentials %}
+  <section class="block">
+    <h2>{{ ui.section_courses_certs }}</h2>
+    <ul class="bullets">
+      {% for item in credentials %}
+        {% if item is mapping %}
+          {# Forma estructurada: {name, issuer, year, url, issuer_url} #}
+          <li>
+            <strong>{% if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.name }}</a>{% else %}{{ item.name }}{% endif %}</strong>
+            {%- if item.issuer %} | {% if item.issuer_url %}<a href="{{ item.issuer_url }}" target="_blank">{{ item.issuer }}</a>{% else %}{{ item.issuer }}{% endif %}{% endif %}
+            {%- if item.year %} <span class="period">({{ item.year }})</span>{% endif %}
+          </li>
+        {% else %}
+          {# Forma heredada: string plano, con enlaces Markdown embebidos #}
+          <li>{{ item | markdown_links | safe }}</li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if spoken_languages %}
+  <section class="block">
+    <h2>{{ ui.section_spoken_languages }}</h2>
+    <ul class="bullets">
+      {% for spoken in spoken_languages %}
+        {% if spoken is mapping %}
+        <li>{{ spoken.language }}{% if spoken.level %} | {{ spoken.level }}{% endif %}{% if spoken.certificate_url %} | <a href="{{ spoken.certificate_url }}" target="_blank">{{ ui.section_certifications }}</a>{% endif %}</li>
+        {% else %}
+        <li>{{ spoken | markdown_links | safe }}</li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</body>
+</html>
