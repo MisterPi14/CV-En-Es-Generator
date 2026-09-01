@@ -230,6 +230,27 @@ def model_slug(model: str = None) -> str:
     return re.sub(r'[^A-Za-z0-9._-]+', '-', (model or OLLAMA_MODEL)).strip('-')
 
 
+def source_stem(path: Path) -> str:
+    """Nombre base del YAML de origen, sin idioma ni modelo.
+
+    Se conserva para que el derivado quede junto a su fuente y no la pise:
+    `resume2.es.yaml` produce `resume2.en.<modelo>.yaml`, no `resume.en...`.
+    Se corta en el primer token de idioma, asi que retraducir un derivado
+    (`resume.en.gpt-oss.yaml`) vuelve a `resume`, en vez de encadenar modelos.
+    """
+    tokens = path.stem.split('.')
+    base = []
+    for token in tokens:
+        if token.lower() in LANG_LABELS:
+            break
+        base.append(token)
+    return '.'.join(base) or tokens[0]
+
+
+def derived_yaml_name(src_path: Path, dst_lang: str, model: str = None) -> str:
+    return f"{source_stem(src_path)}.{dst_lang}.{model_slug(model)}.yaml"
+
+
 def choose_yaml(preselected: str = None, prompt: str = "YAML de entrada") -> Path:
     """Elige un YAML del directorio: por flag o listando los disponibles."""
     if preselected:
@@ -943,7 +964,10 @@ def run_translate(args) -> None:
         print(f"[ERROR] El origen ya está en '{src_lang}'; elige otro idioma destino.")
         sys.exit(1)
 
-    out_path = BASE_DIR / (args.output or f"resume.{dst_lang}.{model_slug()}.yaml")
+    out_path = BASE_DIR / (args.output or derived_yaml_name(src_path, dst_lang))
+    if out_path.resolve() == src_path.resolve():
+        print(f"[ERROR] El destino coincide con el origen ({src_path.name}); usa --output.")
+        sys.exit(1)
     if out_path.exists():
         print(f"[WARN] {out_path.name} ya existe y se va a sobrescribir.")
 
