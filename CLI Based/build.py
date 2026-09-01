@@ -15,8 +15,8 @@ try:
 except ImportError:
     OLLAMA_AVAILABLE = False
 
-OLLAMA_MODEL = "gpt-oss:120b-cloud"
-OLLAMA_THINK = "medium"   # 'low' | 'medium' | 'high' | False
+OLLAMA_MODEL = "gpt-oss:20b-cloud"
+OLLAMA_THINK = "low"   # 'low' | 'medium' | 'high' | False
 # Intento de importación de WeasyPrint con manejo de errores para dependencias nativas faltantes
 try:
     from weasyprint import HTML  # type: ignore
@@ -713,7 +713,7 @@ def _translate_relevant_project(item, t):
     if isinstance(item, dict):
         out = copy.deepcopy(item)
         if 'title' in out: out['title'] = t(out['title'], 'short')
-        if 'subitems' in out: out['subitems'] = [t(x, 'bullets') for x in out['subitems']]
+        if out.get('subitems'): out['subitems'] = [t(x, 'bullets') for x in out['subitems']]
         return out
     return t(item, 'bullets')
 
@@ -743,27 +743,30 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
     if 'summary' in translated:
         translated['summary'] = t(translated['summary'], 'prose')
 
-    for exp in translated.get('work_experience', []):
+    for exp in translated.get('work_experience') or []:
         if 'role' in exp: exp['role'] = t(exp['role'])
         if 'company' in exp: exp['company'] = t(exp['company'])
         if 'description' in exp: exp['description'] = t(exp['description'], 'bullets')
         if 'location' in exp: exp['location'] = t(exp['location'])
         if 'period' in exp: exp['period'] = t(exp['period'])
 
-    for proj in translated.get('projects', []):
+    for proj in translated.get('projects') or []:
         if 'title' in proj: proj['title'] = t(proj['title'])
         if 'description' in proj: proj['description'] = t(proj['description'], 'bullets')
         if 'period' in proj: proj['period'] = t(proj['period'])
 
-    for edu in translated.get('education', []):
+    for edu in translated.get('education') or []:
         if 'degree' in edu: edu['degree'] = t(edu['degree'])
         if 'institution' in edu: edu['institution'] = t(edu['institution'])
         if 'period' in edu: edu['period'] = t(edu['period'])
         # 'gpa' se copia tal cual: es un dato identificatorio y numerico.
         if 'Relevant subjects' in edu: edu['Relevant subjects'] = t(edu['Relevant subjects'], 'prose')
-        if 'Extracurricular activities' in edu:
+        # `or []`: una clave escrita en el YAML pero sin valor se carga como
+        # None, y `in edu` es cierto igual. Sin esto, iterar revienta con
+        # TypeError y aborta la traduccion completa a media corrida.
+        if edu.get('Extracurricular activities'):
             edu['Extracurricular activities'] = [t(c, 'bullets') for c in edu['Extracurricular activities']]
-        if 'Relevant projects' in edu:
+        if edu.get('Relevant projects'):
             edu['Relevant projects'] = [_translate_relevant_project(c, t) for c in edu['Relevant projects']]
 
     def translate_credential(item):
@@ -777,15 +780,15 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
             return out
         return t(item)
 
-    if 'certifications' in translated:
+    if translated.get('certifications'):
         translated['certifications'] = [translate_credential(c) for c in translated['certifications']]
 
-    if 'courses' in translated:
+    if translated.get('courses'):
         translated['courses'] = [translate_credential(c) for c in translated['courses']]
 
     # Secciones de logros del template 'capitalone'. Sin esto pasarian en el
     # idioma original: translate_cv_data recorre una lista fija de campos.
-    for item in translated.get('extracurriculars', []):
+    for item in translated.get('extracurriculars') or []:
         if not isinstance(item, dict):
             continue
         if 'exp' in item: item['exp'] = t(item['exp'], 'short')
@@ -793,14 +796,14 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
         if 'event' in item: item['event'] = t(item['event'], 'prose')
         if 'date' in item: item['date'] = t(item['date'], 'short')
 
-    for item in translated.get('hackathons', []):
+    for item in translated.get('hackathons') or []:
         if not isinstance(item, dict):
             continue
         if 'achievement' in item: item['achievement'] = t(item['achievement'], 'short')
         if 'period' in item: item['period'] = t(item['period'], 'short')
         # 'name' es nombre propio del evento: no se traduce.
 
-    for item in translated.get('academic_visits', []):
+    for item in translated.get('academic_visits') or []:
         if not isinstance(item, dict):
             continue
         if 'focus' in item: item['focus'] = t(item['focus'], 'bullets')
@@ -808,11 +811,11 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
         if 'institution' in item: item['institution'] = t(item['institution'], 'short')
 
     # Las habilidades blandas sí se traducen; las técnicas no.
-    if 'skills' in translated and 'soft_skills' in translated['skills']:
+    if (translated.get('skills') or {}).get('soft_skills'):
         translated['skills']['soft_skills'] = [t(s, 'list_item') for s in translated['skills']['soft_skills']]
 
     # Idiomas hablados: se traduce el nombre del idioma, no el nivel (B2, C1...).
-    for spoken in translated.get('spoken_languages', []):
+    for spoken in translated.get('spoken_languages') or []:
         if isinstance(spoken, dict) and 'language' in spoken:
             spoken['language'] = t(spoken['language'], 'list_item')
 
