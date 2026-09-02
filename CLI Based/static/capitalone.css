@@ -116,6 +116,25 @@ h1.name {
   margin-bottom: 0.1em;
 }
 
+/* El titulo de grado NO se agranda: el documento se imprime a un solo tamano y
+   la jerarquia la da la negrita que ya trae `.entry-title`. Hubo una version
+   con `font-size: 1.27em` aqui (~2 pt sobre la base de 10 px del template);
+   se retiro a peticion del usuario. Si vuelve a hacer falta, va en `em` y
+   nunca en `pt`: el auto-ajuste reescala todo el documento desde --fit-font,
+   asi que un valor absoluto romperia el ajuste en silencio. */
+
+/* El promedio va sin negritas: es un atributo del grado, no un encabezado. */
+.entry-title.degree .gpa {
+  font-weight: 400;
+}
+
+/* Separador entre institucion y promedio, al estilo de los pipes del titulo. */
+.entry-title.degree .gpa::before {
+  content: "|";
+  margin-right: 0.4em;
+  color: var(--muted);
+}
+
 .period {
   font-weight: 400;
   color: var(--muted);

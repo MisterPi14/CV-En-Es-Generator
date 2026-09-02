@@ -130,10 +130,10 @@ UI_STRINGS = {
         "section_extracurriculars": "Extracurriculares",
         "label_languages": "Lenguajes",
         "label_frameworks": "Frameworks y Herramientas",
-        "label_coursework": "Materias relevantes",
+        "label_relevant_subjects": "Materias relevantes",
         "label_gpa": "Promedio",
         "label_hackathons": "Hackathones y Competencias",
-        "label_academic_visits": "Visitas Académicas y de Investigación",
+        "section_academic_visits": "Visitas Académicas y de Investigación",
         "label_student_clubs": "Clubes Estudiantiles"
     },
     "en": {
@@ -162,10 +162,10 @@ UI_STRINGS = {
         "section_extracurriculars": "Extracurriculars",
         "label_languages": "Languages",
         "label_frameworks": "Frameworks & Tools",
-        "label_coursework": "Relevant coursework",
+        "label_relevant_subjects": "Relevant subjects",
         "label_gpa": "GPA",
         "label_hackathons": "Hackathons & Competitions",
-        "label_academic_visits": "Academic & Research Visits",
+        "section_academic_visits": "Academic & Research Visits",
         "label_student_clubs": "Student Clubs"
     }
 }
@@ -174,7 +174,17 @@ UI_STRINGS = {
 def load_cv_data(path: Path = None):
     path = path or CV_FILE
     with path.open('r', encoding='utf-8') as f:
-        data = yaml.safe_load(f)
+        try:
+            data = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            # Sin esto el fallo sale como traceback de PyYAML y no dice ni el
+            # archivo ni la causa tipica (un valor con `[...]` sin comillas).
+            mark = getattr(e, 'problem_mark', None)
+            where = f" (linea {mark.line + 1}, columna {mark.column + 1})" if mark else ""
+            print(f"[YAML][ERROR] '{path.name}' no es YAML valido{where}: {e}")
+            print("[YAML][ERROR] Causa habitual: un valor que empieza con '[' "
+                  "—p. ej. un enlace Markdown— sin comillas alrededor.")
+            sys.exit(1)
     return data
 
 
@@ -194,13 +204,28 @@ def dump_cv_data(data: dict, path: Path) -> None:
 
     _Dumper.add_representer(str, _str_representer)
 
+    header = (f"# Generado por build.py --mode translate\n"
+              f"# Modelo traductor: {OLLAMA_MODEL}\n"
+              f"# NO editar a mano esperando que se regenere igual: cada corrida\n"
+              f"# del modelo produce una redaccion ligeramente distinta.\n\n")
+    body = yaml.dump(data, Dumper=_Dumper, allow_unicode=True,
+                     sort_keys=False, default_flow_style=False, width=4096)
+
+    # Guarda de ida y vuelta: el derivado es la ENTRADA del modo pdf, asi que
+    # un YAML invalido no se descubre aqui sino con un traceback de PyYAML en
+    # la corrida siguiente, despues de haber pagado la traduccion completa.
+    # El caso que la motiva: un valor como `[Texto](url)` sin comillas se lee
+    # como secuencia de flujo y rompe el bloque entero.
+    try:
+        yaml.safe_load(header + body)
+    except yaml.YAMLError as e:
+        print(f"[YAML][ERROR] El archivo generado NO es YAML valido: {e}")
+        print("[YAML][ERROR] Se escribe igual para poder inspeccionarlo, pero "
+              "'--mode pdf' fallara hasta corregirlo a mano.")
+
     with path.open('w', encoding='utf-8') as f:
-        f.write(f"# Generado por build.py --mode translate\n"
-                f"# Modelo traductor: {OLLAMA_MODEL}\n"
-                f"# NO editar a mano esperando que se regenere igual: cada corrida\n"
-                f"# del modelo produce una redaccion ligeramente distinta.\n\n")
-        yaml.dump(data, f, Dumper=_Dumper, allow_unicode=True,
-                  sort_keys=False, default_flow_style=False, width=4096)
+        f.write(header)
+        f.write(body)
 
 
 # --- Descubrimiento y seleccion de archivos --------------------------------
@@ -527,6 +552,26 @@ def render_to_pdf(data: dict, lang: str, output_name: str = None, template_name:
 
 PII_SENTINEL_RE = re.compile(r'\[\[P\d+\]\]')
 
+# Enlaces Markdown. El target admite [[Pn]] porque _protect_pii ya sustituyo
+# la URL por un centinela antes de que el texto llegue al modelo.
+MD_LINK_RE = re.compile(r'\[([^\[\]\n]+)\]\(([^()\s]+)\)')
+# Centinela de enlace COMPLETO: ultimo recurso cuando el modelo insiste en
+# romper la sintaxis. El enlace lo reconstruye el codigo, no el modelo.
+LINK_SENTINEL_RE = re.compile(r'\[\[L\d+\]\]')
+
+
+def _link_signature(text: str) -> list:
+    """Targets de los enlaces Markdown BIEN FORMADOS que contiene el texto.
+
+    Comparar la firma de entrada contra la de salida detecta el fallo real
+    observado: el modelo conserva el centinela [[Pn]] (asi que la validacion
+    de PII pasa) pero se come los corchetes, dejando `texto.([[P1]])`. Al
+    reinsertar la URL eso deja de ser un enlace y el template imprime la URL
+    cruda en vez de renderizar un <a>.
+    """
+    return sorted(m.group(2) for m in MD_LINK_RE.finditer(text))
+
+
 # Claves que se copian tal cual y que ninguna funcion debe mandar a Ollama.
 NEVER_SENT_KEYS = frozenset({
     'name', 'email', 'phone', 'gpa', 'github_url', 'linkedin_url',
@@ -639,11 +684,15 @@ systems in Mexico and the United States.
 These are absolute. Violating any one makes the output unusable.
 1. Preserve the exact line structure. If the input has N lines, output N lines,
    in the same order. Never merge, split, reorder, add or drop a line.
-2. Copy every [[Pn]] token verbatim, in its original position. These are
-   redacted values that the program reinserts later. Never translate, renumber,
-   reword, space out or remove them.
+2. Copy every [[Pn]] and [[Ln]] token verbatim, in its original position. These
+   are redacted values that the program reinserts later. Never translate,
+   renumber, reword, space out or remove them.
 3. Preserve Markdown link syntax [visible text](target) exactly. Translate only
-   the visible text; leave whatever is inside the parentheses untouched.
+   the visible text; leave whatever is inside the parentheses untouched. The
+   square brackets are part of the syntax: never drop them, never merge them
+   into the sentence, and never put any character (a period, a space, a comma)
+   between ']' and '('. "Subject A, Subject B([[P1]])" is broken output;
+   "[Subject A, Subject B]([[P1]])" is correct.
 4. Do not translate proper nouns, brand or product names, technologies,
    programming languages, frameworks, tools, certifications, degrees awarded
    under an official name, or acronyms (AWS, IPN, SQL, .NET, Kali Linux).
@@ -653,7 +702,10 @@ These are absolute. Violating any one makes the output unusable.
 6. Keep numbers, dates, percentages and units exactly as given.
 7. Every achievement or responsibility statement, anywhere in the CV, opens with
    an action verb in the SIMPLE PAST tense - bullets, project descriptions,
-   extracurricular blurbs, research focus lines, summary clauses alike. This
+   extracurricular blurbs and research focus lines. The professional summary is
+   the ONE exception: it is a profile, not a list of achievements, so it opens
+   with an impersonal noun phrase naming the role ("Computer engineer focused
+   on...") and never with a past-tense verb. This
    holds even for ongoing or current roles: the resume voice is uniformly past
    ("Developed", "Led", "Automated" / "Desarrolle", "Lidere", "Automatice"),
    never present, never gerund ("Developing", "Desarrollando"), never a
@@ -675,6 +727,10 @@ FIELD_RULES = {
     'prose': """<field_type>Professional summary paragraph.</field_type>
 <style_rules>
 - Keep it a single flowing paragraph. Do not turn it into bullets.
+- OPEN with an impersonal noun phrase naming the professional identity
+  ("Computer engineer focused on...", "Ingeniero en computacion enfocado
+  en..."). Never open with a past-tense verb: invariant 7 does NOT apply to
+  this field, which is a profile and not a list of achievements.
 - Impersonal professional register, no subject pronouns ("Computer engineer
   focused on..." not "I am a computer engineer who...").
 - Preserve the original sentence count.
@@ -758,7 +814,118 @@ def _clean_model_output(raw: str) -> str:
     return out.strip()
 
 
-def translate_text(text: str, target_lang: str, kind: str = 'short') -> str:
+def _ollama_translate(masked: str, target_lang: str, kind: str, correction: str = None):
+    """Una sola llamada al modelo. Devuelve el texto limpio o None si fallo."""
+    messages = _build_translation_messages(masked, target_lang, kind)
+    if correction:
+        # Reintento: se le dice al modelo exactamente que invariante rompio.
+        messages[-1]['content'] += (
+            "\n\n<correction>Your previous answer was rejected. "
+            + correction +
+            " Produce the translation again, obeying that rule exactly.</correction>")
+    try:
+        response = ollama.chat(model=OLLAMA_MODEL, messages=messages, think=OLLAMA_THINK)
+    except Exception as e:
+        print(f"[Ollama][ERROR] Falla en traduccion: {e}")
+        return None
+    return _clean_model_output(response['message']['content']) or None
+
+
+def _validate_translation(masked: str, result: str, tokens: dict, kind: str):
+    """Devuelve (motivo, correccion) o (None, None) si la respuesta es usable.
+
+    'motivo' es un codigo estable ('sentinel' | 'link' | 'lines') que decide a
+    que degradacion recurrir; 'correccion' es el texto que se le devuelve al
+    modelo en el reintento.
+    """
+    missing = [k for k in tokens if k not in result]
+    if missing:
+        return ('sentinel',
+                f"You dropped the redaction tokens {missing}. Every [[Pn]] token in "
+                "the input must appear verbatim in the output, in the same place.")
+
+    unknown = [m for m in PII_SENTINEL_RE.findall(result) if m not in tokens]
+    if unknown:
+        return ('sentinel',
+                f"You invented the tokens {unknown}. Copy only the [[Pn]] tokens that "
+                "appear in the input; never create new ones.")
+
+    # Centinelas de enlace completo (_translate_with_link_sentinels).
+    link_missing = [m for m in LINK_SENTINEL_RE.findall(masked) if m not in result]
+    if link_missing:
+        return ('sentinel',
+                f"You dropped the placeholders {link_missing}. Copy every [[Ln]] "
+                "placeholder verbatim, in its original position.")
+
+    # El fallo real observado: el modelo conserva [[Pn]] pero se come los
+    # corchetes del enlace, dejando `texto.([[P1]])`. Al reinsertar la URL eso
+    # deja de ser un enlace y el template imprime la URL cruda.
+    if _link_signature(masked) != _link_signature(result):
+        return ('link',
+                "You broke the Markdown link syntax. Every link must stay exactly "
+                "[visible text](target): keep the square brackets around the visible "
+                "text and the parentheses around the target, with no character "
+                "between ']' and '('. Translate only the visible text.")
+
+    if kind == 'bullets':
+        expected = masked.strip().count('\n') + 1
+        got = result.strip().count('\n') + 1
+        if expected != got:
+            return ('lines',
+                    f"The input has {expected} lines and your answer had {got}. "
+                    "Output exactly one line per input line, in the same order, "
+                    "with no blank lines added or removed.")
+
+    return (None, None)
+
+
+def _translate_bullets_linewise(text: str, target_lang: str, depth: int) -> str:
+    """Degradacion para 'bullets': cada linea se traduce por separado.
+
+    Una linea suelta no puede desalinear el conteo de lineas del bloque, asi
+    que este camino siempre produce una estructura correcta. Antes, un solo
+    desajuste tiraba la traduccion del bloque entero y la seccion se quedaba
+    en el idioma original: le pasaba a las descripciones densas, sin lineas en
+    blanco entre vinetas, donde el modelo tiende a agregar separacion.
+    """
+    print("[Ollama] Reintentando el bloque vineta por vineta...")
+    out = []
+    for line in text.split('\n'):
+        out.append(line if not line.strip()
+                   else _translate_text(line, target_lang, 'bullets', depth + 1))
+    return '\n'.join(out)
+
+
+def _translate_with_link_sentinels(text: str, target_lang: str, kind: str, depth: int):
+    """Degradacion para enlaces: el enlace lo rearma el codigo, no el modelo.
+
+    Cada `[visible](target)` se sustituye por `[[Ln]]` antes de traducir, de
+    modo que el modelo no tiene corchetes que perder; el texto visible se
+    traduce en una llamada aparte y el enlace se reconstruye aqui. Devuelve
+    None si no habia enlaces (no hay nada que degradar).
+    """
+    links = []
+
+    def stash(m):
+        links.append((m.group(1), m.group(2)))
+        return f"[[L{len(links)}]]"
+
+    carrier = MD_LINK_RE.sub(stash, text)
+    if not links:
+        return None
+
+    print(f"[Ollama] Reintentando con {len(links)} enlace(s) fuera del alcance del modelo...")
+    carrier = _translate_text(carrier, target_lang, kind, depth + 1)
+    for i, (visible, target) in enumerate(links, start=1):
+        # Un texto visible de una sola palabra es un nombre propio (invariante
+        # 4 del prompt): no se traduce y se ahorra la llamada.
+        if re.search(r'\s', visible.strip()):
+            visible = _translate_text(visible, target_lang, 'short', depth + 1)
+        carrier = carrier.replace(f"[[L{i}]]", f"[{visible}]({target})")
+    return carrier
+
+
+def _translate_text(text: str, target_lang: str, kind: str, depth: int) -> str:
     if not OLLAMA_AVAILABLE:
         return text
 
@@ -766,37 +933,51 @@ def translate_text(text: str, target_lang: str, kind: str = 'short') -> str:
     masked, tokens = _protect_pii(text)
 
     print(f"[Ollama] Traduciendo bloque ({kind}) a {target_lang}...")
-    try:
-        response = ollama.chat(
-            model=OLLAMA_MODEL,
-            messages=_build_translation_messages(masked, target_lang, kind),
-            think=OLLAMA_THINK)
-        result = _clean_model_output(response['message']['content'])
-    except Exception as e:
-        print(f"[Ollama][ERROR] Falla en traduccion: {e}")
+    result = _ollama_translate(masked, target_lang, kind)
+    if result is None:
+        print("[Ollama][WARN] Respuesta vacia o con error; se conserva el texto original.")
         return text
 
-    if not result:
-        print("[Ollama][WARN] Respuesta vacia; se conserva el texto original.")
-        return text
+    reason, correction = _validate_translation(masked, result, tokens, kind)
+    if reason:
+        # 1er remedio: pedirlo otra vez nombrando la regla rota. Barato y suele
+        # bastar; antes cualquier violacion se resolvia dejando el original.
+        print(f"[Ollama][WARN] Respuesta invalida ({reason}); reintentando una vez.")
+        retry = _ollama_translate(masked, target_lang, kind, correction)
+        if retry is not None:
+            reason_retry, _ = _validate_translation(masked, retry, tokens, kind)
+            if not reason_retry:
+                return _restore_pii(retry, tokens)
+            reason = reason_retry
 
-    # Si el modelo perdio o invento un centinela, reinsertar corromperia el
-    # dato: ante la duda se conserva el original sin traducir.
-    missing = [k for k in tokens if k not in result]
-    if missing:
-        print(f"[Ollama][WARN] El modelo altero los marcadores {missing}; se conserva el original.")
-        return text
-    unknown = [m for m in PII_SENTINEL_RE.findall(result) if m not in tokens]
-    if unknown:
-        print(f"[Ollama][WARN] El modelo invento marcadores {unknown}; se conserva el original.")
-        return text
+    if reason and depth == 0:
+        # 2o remedio: quitarle al modelo la parte que rompe. Solo en la llamada
+        # de nivel superior, para que las degradaciones no se reentren.
+        if reason == 'link':
+            repaired = _translate_with_link_sentinels(text, target_lang, kind, depth)
+            if repaired is not None:
+                return repaired
+        elif reason == 'lines':
+            return _translate_bullets_linewise(text, target_lang, depth)
 
-    # Invariante de estructura: una linea de entrada, una linea de salida.
-    if kind == 'bullets' and text.strip().count('\n') != result.count('\n'):
-        print("[Ollama][WARN] Cambio el numero de vinetas del bloque; se conserva el original.")
+    if reason:
+        print(f"[Ollama][WARN] No se pudo obtener una traduccion valida ({reason}); "
+              "se conserva el texto original.")
         return text
 
     return _restore_pii(result, tokens)
+
+
+def translate_text(text: str, target_lang: str, kind: str = 'short') -> str:
+    """Traduce un fragmento del CV.
+
+    Contrato: nunca devuelve un dato corrompido. Si el modelo rompe una
+    invariante (centinela de PII, sintaxis de enlace, numero de lineas) se
+    reintenta una vez nombrando la regla, luego se degrada a una estrategia
+    que hace imposible ese fallo concreto, y solo si todo falla se devuelve el
+    texto original sin traducir.
+    """
+    return _translate_text(text, target_lang, kind, 0)
 
 
 def _translate_relevant_project(item, t):

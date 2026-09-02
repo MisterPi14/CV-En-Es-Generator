@@ -28,7 +28,7 @@
       {% if personal_info.email %}<span class="contact-item"><a href="mailto:{{ personal_info.email }}">{{ personal_info.email }}</a></span>{% endif %}
       {% if personal_info.location %}<span class="contact-item">{{ personal_info.location }}</span>{% endif %}
       {% if personal_info.linkedin_url %}<span class="contact-item"><a href="{{ personal_info.linkedin_url }}" target="_blank">LinkedIn</a></span>{% endif %}
-      {% if personal_info.github_url %}<span class="contact-item"><a href="{{ personal_info.github_url }}" target="_blank">Github</a></span>{% endif %}
+      {% if personal_info.github_url %}<span class="contact-item"><a href="{{ personal_info.github_url }}" target="_blank">GitHub</a></span>{% endif %}
       {% if personal_info.portfolio_url %}<span class="contact-item"><a href="{{ personal_info.portfolio_url }}" target="_blank">{{ ui.label_portfolio }}</a></span>{% endif %}
     </div>
   </header>
@@ -49,10 +49,12 @@
     <h2>{{ ui.section_education_gen }}</h2>
     {% for edu in education %}
     <div class="entry">
-      <div class="entry-title">{{ edu.degree | markdown_links | safe }} | {{ edu.institution | markdown_links | safe }}{% if edu.period %} <span class="period">({{ edu.period }})</span>{% endif %}</div>
-      {% if edu.gpa %}<div class="meta">{{ ui.label_gpa }}: {{ edu.gpa }}</div>{% endif %}
+      {# El promedio va EN la linea del titulo, no en una linea propia: a razon
+         de una linea por grado con `gpa`, era de lo mas caro que imprimia esta
+         seccion, y como dato cabe de sobra junto a la institucion. #}
+      <div class="entry-title degree">{{ edu.degree | markdown_links | safe }} | {{ edu.institution | markdown_links | safe }}{% if edu.gpa %} <span class="gpa">{{ ui.label_gpa }}: {{ edu.gpa }}</span>{% endif %}{% if edu.period %} <span class="period">({{ edu.period }})</span>{% endif %}</div>
       {% if edu['Relevant subjects'] %}
-        <div class="meta"><span class="meta-label">{{ ui.label_coursework }}:</span> {{ edu['Relevant subjects'] | markdown_links | safe }}</div>
+        <div class="meta"><span class="meta-label">{{ ui.label_relevant_subjects }}:</span> {{ edu['Relevant subjects'] | markdown_links | safe }}</div>
       {% endif %}
       {% if edu['Relevant projects'] %}
       <ul class="bullets">
@@ -161,9 +163,27 @@
   </section>
   {% endif %}
 
-  {# --- 7. Extracurriculares ---------------------------------------------
-     Hackathones, competencias, visitas academicas, clubes estudiantiles y
-     toda iniciativa fuera del aula. Certificaciones y cursos van aparte. #}
+  {# --- 7. Visitas academicas y de investigacion --------------------------
+     Seccion propia, y por encima de Extracurriculares, porque el documento de
+     estrategia del TDP las cuenta como evidencia de investigacion, no como
+     actividad fuera del aula: enterrarlas al pie de la pagina las lee como lo
+     segundo. #}
+  {% if academic_visits %}
+  <section class="block">
+    <h2>{{ ui.section_academic_visits }}</h2>
+    <ul class="bullets">
+      {% for item in academic_visits %}
+      <li><strong>{% if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.institution }}</a>{% else %}{{ item.institution }}{% endif %}</strong>
+        {%- if item.focus %} | {{ item.focus | markdown_links | safe }}{% endif %}
+        {%- if item.period %} <span class="period">({{ item.period }})</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {# --- 8. Extracurriculares ---------------------------------------------
+     Hackathones, competencias, clubes estudiantiles y toda iniciativa fuera
+     del aula. Certificaciones, cursos y visitas academicas van aparte. #}
   {% set student_clubs = [] %}
   {% for edu in education | default([], true) %}
     {% for act in edu['Extracurricular activities'] | default([], true) %}
@@ -171,7 +191,7 @@
     {% endfor %}
   {% endfor %}
 
-  {% if extracurriculars or hackathons or academic_visits or student_clubs %}
+  {% if extracurriculars or hackathons or student_clubs %}
   <section class="block">
     <h2>{{ ui.section_extracurriculars }}</h2>
 
@@ -181,17 +201,6 @@
       {% for item in hackathons %}
       <li><strong>{% if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.name }}</a>{% else %}{{ item.name }}{% endif %}</strong>
         {%- if item.achievement %} | {{ item.achievement | markdown_links | safe }}{% endif %}
-        {%- if item.period %} <span class="period">({{ item.period }})</span>{% endif %}</li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-
-    {% if academic_visits %}
-    <div class="meta-label">{{ ui.label_academic_visits }}</div>
-    <ul class="bullets">
-      {% for item in academic_visits %}
-      <li><strong>{% if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.institution }}</a>{% else %}{{ item.institution }}{% endif %}</strong>
-        {%- if item.focus %} | {{ item.focus | markdown_links | safe }}{% endif %}
         {%- if item.period %} <span class="period">({{ item.period }})</span>{% endif %}</li>
       {% endfor %}
     </ul>

@@ -1,11 +1,30 @@
 """Auditoria: intercepta ollama.chat y muestra TODO lo que saldria al modelo,
 sin llamar realmente al modelo. Falla si detecta PII en el payload."""
 import sys, re, io
-sys.path.insert(0, r'K:\1.- Software Propietario\Resume\CLI Based')
+from pathlib import Path
+
+# La raiz se deduce de la ubicacion de este archivo: antes estaba escrita a
+# mano y mover el repo rompia la auditoria.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import build
 
-DATA = build.load_cv_data()
+# El YAML a auditar: el que se pase por argumento, o la primera fuente escrita
+# a mano. `resume.yaml` (el default de load_cv_data) ya no existe en el repo
+# desde que las fuentes declaran el idioma en el nombre, asi que sin esto la
+# auditoria fallaba con FileNotFoundError antes de auditar nada.
+if len(sys.argv) > 1:
+    SOURCE = Path(sys.argv[1])
+    if not SOURCE.is_absolute():
+        SOURCE = build.BASE_DIR / SOURCE
+else:
+    DERIVED_RE = re.compile(r'\.(es|en)\.[^.]+\.yaml$')
+    SOURCE = next((p for p in build.discover_yamls() if not DERIVED_RE.search(p.name)), None)
+    if SOURCE is None:
+        sys.exit("[AUDIT] No hay ninguna fuente *.yaml que auditar en el directorio.")
+print(f"[AUDIT] Fuente: {SOURCE.name}")
+
+DATA = build.load_cv_data(SOURCE)
 info = DATA.get('personal_info', {})
 
 sent = []
