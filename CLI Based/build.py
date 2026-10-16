@@ -28,7 +28,7 @@ except Exception as e:  # Captura ImportError / OSError (librerías GTK/Pango fa
 
 # Playwright (fallback sin dependencias nativas similares) -------------------
 try:
-    from playwright.sync_api import sync_playwright  # type: ignore
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError  # type: ignore
     PLAYWRIGHT_AVAILABLE = True
 except Exception:
     PLAYWRIGHT_AVAILABLE = False
@@ -119,7 +119,7 @@ UI_STRINGS = {
         "section_technical_skills": "Habilidades Técnicas",
         "section_soft_skills": "Habilidades Blandas",
         "section_academic_project": "Proyecto Académico",
-        "section_work": "Experiencia Laboral",
+        "section_work": "Experiencia Técnica",
         "section_education_gen": "Formación Educativa",
         "section_courses_certs": "Cursos y Certificaciones",
         "section_spoken_languages": "Idiomas",
@@ -182,8 +182,8 @@ def load_cv_data(path: Path = None):
             mark = getattr(e, 'problem_mark', None)
             where = f" (linea {mark.line + 1}, columna {mark.column + 1})" if mark else ""
             print(f"[YAML][ERROR] '{path.name}' no es YAML valido{where}: {e}")
-            print("[YAML][ERROR] Causa habitual: un valor que empieza con '[' "
-                  "—p. ej. un enlace Markdown— sin comillas alrededor.")
+            print("[YAML][ERROR] Revisa la indentación y las claves cercanas a esa línea; "
+                  "los valores que empiezan con '[' deben ir entre comillas.")
             sys.exit(1)
     return data
 
@@ -458,9 +458,14 @@ def _playwright_pdf(html_content: str, output_file: Path, base_dir: Path, cfg: d
         with sync_playwright() as p:  # type: ignore
             browser = p.chromium.launch()
             page = browser.new_page()
-            page.goto(file_url)
-            # Asegurar que fuentes remotas intenten cargarse
-            page.wait_for_load_state('networkidle')
+            page.goto(file_url, wait_until='domcontentloaded')
+            # Las fuentes/iconos de CDN son opcionales: una red lenta no debe
+            # impedir imprimir el HTML y CSS locales.
+            try:
+                page.wait_for_load_state('networkidle', timeout=10_000)
+            except PlaywrightTimeoutError:
+                page.evaluate('window.stop()')
+                print('[WARN] Recursos externos lentos; se imprime con los recursos disponibles.')
 
             if cfg.get('fit_one_page'):
                 _fit_to_one_page(page, cfg)
@@ -488,8 +493,8 @@ def _playwright_pdf(html_content: str, output_file: Path, base_dir: Path, cfg: d
             tmp_path.unlink()
 
 
-def render_to_pdf(data: dict, lang: str, output_name: str = None, template_name: str = DEFAULT_TEMPLATE):
-    """Renderiza el CV a PDF (si WeasyPrint funciona) o genera fallback HTML.
+def render_to_pdf(data: dict, lang: str, output_name: str = None, template_name: str = DEFAULT_TEMPLATE) -> bool:
+    """Renderiza el CV a PDF y devuelve si se genero correctamente.
 
     Si WeasyPrint no está disponible (falta libgobject/pango en Windows u otra dependencia),
     se genera un archivo HTML para inspección manual y se muestra una guía breve.
@@ -521,14 +526,14 @@ def render_to_pdf(data: dict, lang: str, output_name: str = None, template_name:
         try:
             HTML(string=html_content, base_url=str(BASE_DIR)).write_pdf(str(output_file))
             print(f"Generated {output_file.name} (WeasyPrint)")
-            return
+            return True
         except Exception:
             print("[WARN] WeasyPrint falló en tiempo de ejecución. Intentando Playwright...")
             traceback.print_exc()
 
     # Si no disponible WeasyPrint o falló, usar Playwright
     if _playwright_pdf(html_content, output_file, BASE_DIR, cfg):
-        return
+        return True
 
     # Último fallback: guardar HTML
     fallback_html = output_file.with_suffix('.html')
@@ -538,6 +543,7 @@ def render_to_pdf(data: dict, lang: str, output_name: str = None, template_name:
     print(f"[WARN] No se pudo generar PDF. Fallback HTML: {fallback_html.name}")
     print("Para Playwright: pip install playwright && python -m playwright install chromium")
     print("Para WeasyPrint (dependencias nativas): https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#installation")
+    return False
 
 
 # --- Capa de proteccion de PII -------------------------------------------
@@ -1184,7 +1190,8 @@ def run_pdf(args) -> None:
     # fuente (y con que modelo, si es derivado) se genero.
     output_name = args.output or f"{src_path.stem}.{template_name}.pdf"
     print(f"Generando {output_name}...")
-    render_to_pdf(data, lang, output_name, template_name)
+    if not render_to_pdf(data, lang, output_name, template_name):
+        sys.exit(1)
 
 
 def main():
