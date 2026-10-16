@@ -2,7 +2,7 @@
 <html lang="{{ lang }}">
 <head>
   <meta charset="UTF-8" />
-  <title>{{ personal_info.name }} - CV</title>
+  <title>{{ ui.document_title }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -21,8 +21,8 @@
       {% endif %}
       {% if personal_info.email %}<span class="contact-item"><a href="mailto:{{ personal_info.email }}">{{ personal_info.email }}</a></span>{% endif %}
       {% if personal_info.location %}<span class="contact-item">{{ personal_info.location }}</span>{% endif %}
-      {% if personal_info.linkedin_url %}<span class="contact-item"><a href="{{ personal_info.linkedin_url }}" target="_blank">LinkedIn</a></span>{% endif %}
-      {% if personal_info.github_url %}<span class="contact-item"><a href="{{ personal_info.github_url }}" target="_blank">Github</a></span>{% endif %}
+      {% if personal_info.linkedin_url %}<span class="contact-item"><a href="{{ personal_info.linkedin_url }}" target="_blank">{{ ui.label_linkedin }}</a></span>{% endif %}
+      {% if personal_info.github_url %}<span class="contact-item"><a href="{{ personal_info.github_url }}" target="_blank">{{ ui.label_github }}</a></span>{% endif %}
       {% if personal_info.portfolio_url %}<span class="contact-item"><a href="{{ personal_info.portfolio_url }}" target="_blank">{{ ui.label_portfolio }}</a></span>{% endif %}
     </div>
   </header>
@@ -124,7 +124,7 @@
     <ul class="bullets">
       {% for spoken in spoken_languages %}
         {% if spoken is mapping %}
-        <li>{{ spoken.language }}{% if spoken.level %} | {{ spoken.level }}{% endif %}{% if spoken.certificate_url %} | <a href="{{ spoken.certificate_url }}" target="_blank">{{ ui.section_certifications }}</a>{% endif %}</li>
+        <li>{{ spoken.language }}{% if spoken.level %} | {{ spoken.level }}{% endif %}{% if spoken.certificate_url %} | <a href="{{ spoken.certificate_url }}" target="_blank">{{ ui.label_certificate }}</a>{% endif %}</li>
         {% else %}
         <li>{{ spoken | markdown_links | safe }}</li>
         {% endif %}

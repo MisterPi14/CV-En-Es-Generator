@@ -15,7 +15,7 @@
 <html lang="{{ lang }}">
 <head>
   <meta charset="UTF-8" />
-  <title>{{ personal_info.name }} - CV</title>
+  <title>{{ ui.document_title }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,12 +32,10 @@
       {% endif %}
       {% if personal_info.email %}<div class="contact-item"><i class="fa-solid fa-envelope"></i><span><a href="mailto:{{ personal_info.email }}">{{ personal_info.email }}</a></span></div>{% endif %}
       {% if personal_info.linkedin_url %}
-        {% set linkedin_user = personal_info.name.title() %}
-        <div class="contact-item"><i class="fa-brands fa-linkedin"></i><span><a href="{{ personal_info.linkedin_url }}" target="_blank">{{ linkedin_user }}</a></span></div>
+        <div class="contact-item"><i class="fa-brands fa-linkedin"></i><span><a href="{{ personal_info.linkedin_url }}" target="_blank">{{ ui.label_linkedin }}</a></span></div>
       {% endif %}
       {% if personal_info.github_url %}
-        {% set github_user = personal_info.github_url.split('/')[-1] %}
-        <div class="contact-item"><i class="fa-brands fa-github"></i><span><a href="{{ personal_info.github_url }}" target="_blank">{{ github_user }}</a></span></div>
+        <div class="contact-item"><i class="fa-brands fa-github"></i><span><a href="{{ personal_info.github_url }}" target="_blank">{{ ui.label_github }}</a></span></div>
       {% endif %}
     </div>
   </header>
@@ -48,13 +46,13 @@
       {% for edu in education %}
       <div class="edu-item">
         <div class="degree">{{ edu.degree | markdown_links | safe }}</div>
-        <div class="institution-period">{{ edu.institution | markdown_links | safe }} · <span class="period">{{ edu.period }}</span>{% if edu.gpa %} · <span>{{ "GPA:" if lang == 'en' else "Promedio:" }} {{ edu.gpa }}</span>{% endif %}</div>
+        <div class="institution-period">{{ edu.institution | markdown_links | safe }} · <span class="period">{{ edu.period }}</span>{% if edu.gpa %} · <span>{{ ui.label_gpa }}: {{ edu.gpa }}</span>{% endif %}</div>
         {% if edu['Relevant subjects'] %}
-          <p class="edu-detail"><strong>{{ "Relevant subjects" if lang == 'en' else "Materias relevantes" }}</strong> {{ edu['Relevant subjects'] | markdown_links | safe }}</p>
+          <p class="edu-detail"><strong>{{ ui.label_relevant_subjects }}</strong> {{ edu['Relevant subjects'] | markdown_links | safe }}</p>
         {% endif %}
         {% if edu['Extracurricular activities'] %}
           <div class="edu-detail">
-            <strong>{{ "Extracurricular activities" if lang == 'en' else "Actividades extracurriculares" }}</strong>
+            <strong>{{ ui.label_extracurricular_activities }}</strong>
             <ul>
             {% for activity in edu['Extracurricular activities'] %}
               <li>{{ activity | markdown_links | safe }}</li>
@@ -64,7 +62,7 @@
         {% endif %}
         {% if edu['Relevant projects'] %}
           <div class="edu-detail">
-            <strong>{{ "Relevant projects" if lang == 'en' else "Proyectos relevantes" }}</strong>
+            <strong>{{ ui.label_relevant_projects }}</strong>
             <ul>
             {% for r_proj in edu['Relevant projects'] %}
               {% if r_proj is mapping %}

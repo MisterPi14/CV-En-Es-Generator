@@ -134,7 +134,12 @@ UI_STRINGS = {
         "label_gpa": "Promedio",
         "label_hackathons": "Hackathones y Competencias",
         "section_academic_visits": "Visitas Académicas y de Investigación",
-        "label_student_clubs": "Clubes Estudiantiles"
+        "label_student_clubs": "Clubes Estudiantiles",
+        "label_extracurricular_activities": "Actividades extracurriculares",
+        "label_relevant_projects": "Proyectos relevantes",
+        "label_linkedin": "LinkedIn",
+        "label_github": "GitHub",
+        "label_certificate": "Certificaciones",
     },
     "en": {
         "section_summary": "Professional Summary",
@@ -166,9 +171,54 @@ UI_STRINGS = {
         "label_gpa": "GPA",
         "label_hackathons": "Hackathons & Competitions",
         "section_academic_visits": "Academic & Research Visits",
-        "label_student_clubs": "Student Clubs"
+        "label_student_clubs": "Student Clubs",
+        "label_extracurricular_activities": "Extracurricular activities",
+        "label_relevant_projects": "Relevant projects",
+        "label_linkedin": "LinkedIn",
+        "label_github": "GitHub",
+        "label_certificate": "Certifications",
     }
 }
+
+
+def validate_ui(data: dict) -> None:
+    """Detecta errores de edición antes de renderizar o llamar al traductor."""
+    allowed = set(UI_STRINGS['es']) | {'document_title'}
+
+    def check_labels(labels, path):
+        if not isinstance(labels, dict):
+            raise ValueError(f"{path} debe ser un mapping de claves y textos.")
+        for key, value in labels.items():
+            if key not in allowed:
+                raise ValueError(f"Clave de texto desconocida: {path}.{key}")
+            if not isinstance(value, str):
+                raise ValueError(f'{path}.{key} debe ser texto entre comillas; usa "" para dejarlo vacío.')
+
+    check_labels(data.get('ui', {}), 'ui')
+    overrides = data.get('ui_templates', {})
+    if not isinstance(overrides, dict):
+        raise ValueError('ui_templates debe ser un mapping de nombres de template.')
+    for name, labels in overrides.items():
+        if name not in TEMPLATES:
+            raise ValueError(f'Template desconocido en ui_templates: {name}')
+        check_labels(labels, f'ui_templates.{name}')
+
+
+def resolve_ui(data: dict, lang: str, template_name: str) -> dict:
+    """Predeterminados por idioma/template < ui del YAML < ui_templates."""
+    validate_ui(data)
+    labels = dict(UI_STRINGS[lang])
+    info = data.get('personal_info') or {}
+    labels['document_title'] = f"{info.get('name', '')} - CV"
+    # Conservar la presentación de los archivos anteriores, sin ui.
+    if template_name == 'legacy':
+        labels['label_linkedin'] = (info.get('name') or '').title()
+        labels['label_github'] = (info.get('github_url') or '').split('/')[-1]
+    elif template_name == 'generation':
+        labels['label_github'] = 'Github'
+    labels.update(data.get('ui', {}))
+    labels.update(data.get('ui_templates', {}).get(template_name, {}))
+    return labels
 
 
 def load_cv_data(path: Path = None):
@@ -503,18 +553,17 @@ def render_to_pdf(data: dict, lang: str, output_name: str = None, template_name:
 
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATES_DIR)),
-        autoescape=select_autoescape(['html', 'xml'])
+        autoescape=select_autoescape(['html', 'xml', 'j2'])
     )
     env.filters['markdown_links'] = markdown_links
     env.filters['strip_links'] = strip_markdown_links
     template = env.get_template(cfg['template'])
 
-    html_content = template.render(
-        lang=lang,
-        ui=UI_STRINGS[lang],
-        css=cfg['css'],
-        **data
-    )
+    # Las claves de configuración no pueden colisionar con los argumentos Jinja.
+    context = {key: value for key, value in data.items()
+               if key not in {'ui', 'ui_templates'}}
+    context.update(lang=lang, ui=resolve_ui(data, lang, template_name), css=cfg['css'])
+    html_content = template.render(**context)
 
     if output_name:
         output_file = BASE_DIR / output_name
@@ -998,6 +1047,7 @@ def _translate_relevant_project(item, t):
 
 def translate_cv_data(data: dict, target_lang: str) -> dict:
     global _PII_TERMS
+    validate_ui(data)
     translated = copy.deepcopy(data)
 
     # Terminos identificatorios que se enmascararan en CADA llamada al modelo.
@@ -1010,6 +1060,14 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
         return translate_text(text, target_lang, kind)
 
     print(f"--- Iniciando traducción del CV completo a '{target_lang}' ---")
+
+    # Los textos personalizados también pertenecen al documento traducido.
+    # Pasan por la misma protección de PII que el resto del contenido.
+    label_maps = [translated.get('ui', {})]
+    label_maps.extend(translated.get('ui_templates', {}).values())
+    for labels in label_maps:
+        for key, value in labels.items():
+            labels[key] = t(value, 'short')
 
     if 'personal_info' in translated:
         # name, email, phone, gpa y *_url NO se envian nunca (NEVER_SENT_KEYS).
