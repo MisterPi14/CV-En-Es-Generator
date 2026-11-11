@@ -1,94 +1,125 @@
 # Generador de CV (CLI)
 
-Genera PDF con los templates `legacy`, `generation` y `capitalone`, o traduce
-un YAML para reutilizarlo después al generar documentos.
+Un YAML con tu CV → PDF con tres diseños (`legacy`, `generation`, `capitalone`),
+y traducción ES↔EN con un modelo de Ollama.
 
-En Windows, abre **`run.bat` con doble clic**. También puedes ejecutarlo desde
-PowerShell con `./run.bat`. El menú permite elegir la operación, el YAML y el
-template. Al terminar sin argumentos, espera una tecla para poder leer el resultado.
+## Arrancar
 
-El lanzador activa `.venv\cvtranslator` para su proceso, comprueba las dependencias,
-instala las que falten y prepara el Chromium que necesita Playwright. Utiliza rutas
-relativas al proyecto: funciona aunque cambies la carpeta de ubicación o lo abras
-desde otro directorio. No hace falta ejecutar `setup_env.sh` ni activar el entorno
-manualmente. Si el entorno no existe, lo crea con Python instalado en Windows.
-La primera instalación requiere Internet; los siguientes arranques reutilizan los
-paquetes y el navegador existentes. Las fuentes de los templates se cargan desde CDN;
-si la carga tarda demasiado, el PDF usa los recursos disponibles y fuentes del sistema.
+| Desde | Comando |
+|---|---|
+| Explorador de Windows | doble clic en **`run.bat`** |
+| PowerShell / Git Bash | `./run.bat` (sin espacio: `. run.bat` lo ejecuta como script de Bash y falla) |
+| Sin menú | `./run.bat --mode pdf --input "mi-cv.en.yaml" --template capitalone` |
 
-También admite todos los argumentos de `build.py`:
+`run.bat` prepara solo el entorno `.venv\cvtranslator`, las dependencias y Chromium.
+No ejecutes `python build.py` directamente: puede tomar otro Python sin Playwright y
+generar un `.html` en vez del PDF.
 
-```powershell
-./run.bat --help
-./run.bat --mode pdf --input resume.en.gpt-oss-20b-cloud.yaml --template capitalone
-./run.bat --mode translate --input resume.es.yaml --to en
-```
+## Menú
 
-Usa como entrada un YAML existente. La traducción requiere además Ollama disponible
-y acceso al modelo configurado en `build.py`; generar PDF no llama al modelo.
+| Opción | Qué hace |
+|---|---|
+| **1. Traducir** | Lee un YAML y escribe otro traducido: `<nombre>.<idioma>.<modelo>.yaml`. Requiere Ollama. |
+| **2. Generar PDF** | Elige YAML y template → `<nombre-del-yaml>.<template>.pdf`. No usa el modelo. |
+| **3. Configuración** | Ajustes que se guardan en `settings.json`. |
+| **0. Salir** | Cierra el programa. |
 
-De los dos entornos trasladados, `cvtranslator` contiene las dependencias de esta
-aplicación. `cvTranslator2` no se utiliza. Los antiguos scripts `activate` guardan
-rutas de antes del traslado; `run.bat` establece la activación con la ruta actual y
-ejecuta siempre el Python del entorno elegido. Una mudanza a otro equipo requiere
-que también esté instalado el Python base indicado en `pyvenv.cfg` o recrear el entorno.
+Al terminar cada operación, con éxito o con error, el menú vuelve a aparecer: la
+ventana solo se cierra con **0. Salir**. Con argumentos (`--mode …`) se ejecuta una
+vez y termina.
 
-Los textos de cada PDF se editan en su YAML. Los dos archivos actuales incluyen al
-final un bloque `ui` con los encabezados, etiquetas, textos de enlaces y título del
-documento. Cambia los **valores**, conservando las claves y la indentación:
+**Configuración → Modelo de traducción** (los modelos de embeddings nunca aparecen):
 
-```yaml
-ui:
-  section_experience: "Experiencia Técnica"          # legacy
-  section_work: "Experiencia Técnica"                # generation
-  section_technical_experience: "Experiencia Técnica" # capitalone
-  section_profile: "Acerca de mí"
-  section_education_gen: "Formación académica"
-  label_gpa: "Promedio"
-  label_linkedin: "Mi perfil profesional"
-  label_github: "Mis repositorios"
-  label_portfolio: "Mis trabajos"
-  label_certificate: "Ver certificado"
-  document_title: "Mi currículum"                     # título/metadatos
-```
+| Opción | Qué muestra |
+|---|---|
+| Locales | Los modelos descargados en tu Ollama, con su tamaño. |
+| Nube | El catálogo de la nube de Ollama, del más reciente al más antiguo, 10 por página. Escribe `m` para la siguiente página, un texto para filtrar (`glm`) o un número para elegir. Requiere `ollama signin` y créditos o suscripción en la cuenta. |
+| Escribir el nombre | Cualquier nombre que acepte Ollama (`gemma4:12b`, `kimi-k2.6:cloud`). |
 
-Edita el bloque existente; no agregues un segundo `ui`. El texto se imprime tal
-cual, independientemente del idioma deducido del nombre del archivo. Para el YAML
-en inglés puedes escribir `Technical Experience`. Los nombres internos de datos
-como `work_experience`, `education` y `personal_info` siguen siendo los mismos.
-El contenido de esas secciones, nombres, fechas, enlaces, descripciones y listas
-se edita en sus campos habituales del YAML.
+El modelo elegido se usa en las traducciones siguientes y su nombre queda en el del
+YAML traducido. Antes de traducir se prueba con una llamada: si no responde (Ollama
+cerrado, modelo inexistente, nube sin créditos), la traducción no empieza y se
+explica por qué.
 
-Opcionalmente, `ui_templates` permite que un mismo YAML tenga textos diferentes
-según el diseño elegido:
+## Editar el CV (solo el YAML)
+
+### Mostrar u ocultar
 
 ```yaml
-ui_templates:
-  generation:
-    section_work: "Experiencia en ingeniería"
-  capitalone:
-    section_technical_experience: "Technical Experience"
+projects:
+- title: Mi proyecto
+  include: false        # no sale en el PDF; el contenido se conserva
 ```
 
-El orden de prioridad es: valores predeterminados del idioma y template → `ui` →
-`ui_templates.<template>`. Los YAML actuales conservan los textos particulares de
-los enlaces de `legacy` y `generation` en `ui_templates`; edítalos ahí para cambiarlos.
-Si omites una clave, se usa su valor predeterminado. `""` deja el texto vacío;
-no uses `null` ni dejes la clave sin valor. Las claves desconocidas producen un
-error que indica dónde corregirlas. Las etiquetas se interpretan como texto,
-no como HTML.
+`include: false` sirve en cualquier elemento de lista y en secciones enteras.
+Los elementos sueltos de `skills` no lo admiten: comenta la línea con `#`.
 
-Solo aparecen los campos que ya utiliza el template elegido: cambiar una etiqueta
-no agrega una sección. El orden, la disposición, los estilos, iconos y separadores
-permanecen definidos por el template. Los textos largos pueden ocupar más espacio
-y activar el ajuste de tamaño existente.
+### Orden de las secciones
 
-El modo `translate` también traduce `ui` y `ui_templates` y los guarda en el YAML
-de destino; después puedes afinarlos manualmente. El modo `pdf` los usa sin
-traducir ni modificar el archivo.
+Las secciones se imprimen **en el orden de sus claves en el YAML**. Para mover una,
+mueve su bloque. La cabecera (`personal_info`) va siempre arriba.
 
-Pruebas de edición de textos (sin navegador ni llamadas al modelo):
+### Cambiar el título de una sección
+
+Escribe el título entre paréntesis después de la clave. El formato no cambia:
+
+```yaml
+extracurriculars(Actividades):
+- exp: ...
+```
+
+No cambies la clave en sí (`extracurricularsed:`): la sección dejaría de
+reconocerse. Si el título lleva `:` o `#`, pon la clave entre comillas:
+`"awards(Premios: 2025)":`.
+
+### Agregar una sección nueva
+
+Cualquier clave que el programa no conoce es una sección nueva. El título es el
+texto entre paréntesis o, si no lo hay, la clave tal cual:
+
+```yaml
+Volunteer Work:                       # título: "Volunteer Work"
+- name: Banco de alimentos            # también: title, exp, role, institution
+  period: 2025                        # también: date, year
+  url: https://ejemplo.org            # opcional: enlaza el título
+  description: |-                     # también: desc, focus; cada línea es una viñeta
+    Organicé la recolección.
+    Coordiné a 10 voluntarios.
+- Un elemento de texto simple
+
+awards(Premios): Un párrafo de texto.
+
+tools(Herramientas):
+  Editores: [Vim, VS Code]            # se imprime "Editores: Vim | VS Code"
+```
+
+Una sección vacía no se imprime. Las nuevas se traducen igual que el resto.
+
+### Textos fijos (opcional)
+
+El bloque `ui` del final cambia rótulos que no son títulos de sección (`label_gpa`,
+`label_github`, `document_title`…). Edita solo el valor, nunca la clave.
+`ui_templates.<template>` aplica un texto solo a ese diseño. Un título entre
+paréntesis gana sobre `ui`.
+
+## Una página exacta (`generation`, `capitalone`)
+
+El tamaño de letra se ajusta solo: **crece** si hay poco contenido y **se reduce**
+si hay mucho, hasta llenar la página al 100 %. Nunca se recorta contenido: solo
+desaparece lo marcado con `include: false`. Si la letra baja de 6 px, la consola
+avisa que impreso será difícil de leer. `legacy` ocupa las páginas que necesite.
+
+## Traducción
+
+Traduce títulos, descripciones, títulos entre paréntesis, secciones nuevas y textos
+`ui`. No envía al modelo nombre, correo, teléfono, URLs ni promedio. Revisa el YAML
+traducido antes de imprimir: el modelo puede variar la redacción entre corridas.
+
+## Pruebas
 
 ```powershell
 ./.venv/cvtranslator/Scripts/python.exe -m unittest discover -s tests -v
 ```
+
+`test_fit_pages` abre Chromium y comprueba que poco, mediano y mucho contenido
+quepan en una página llena; las demás no usan navegador ni modelo.

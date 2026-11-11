@@ -152,3 +152,6 @@ traces/
 
 # Referencia visual de templates (sí se versiona)
 !CLI Based/reference/*.pdf
+
+# Ajustes locales del CLI (modelo elegido)
+/CLI Based/settings.json

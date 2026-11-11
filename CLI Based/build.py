@@ -7,6 +7,8 @@ import traceback
 import tempfile
 import contextlib
 import copy
+import json
+import math
 import re
 
 try:
@@ -15,8 +17,37 @@ try:
 except ImportError:
     OLLAMA_AVAILABLE = False
 
-OLLAMA_MODEL = "gpt-oss:20b-cloud"
+# Modelo del traductor. El valor por defecto se usa hasta que el menu
+# "Configuracion" de run.bat guarde otro en settings.json (junto a build.py).
+DEFAULT_OLLAMA_MODEL = "gpt-oss:20b-cloud"
+SETTINGS_FILE = Path(__file__).parent / "settings.json"
+
+
+def load_settings() -> dict:
+    try:
+        return json.loads(SETTINGS_FILE.read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print(f"[CONFIG][WARN] settings.json ilegible ({e}); se usan los valores por defecto.")
+        return {}
+
+
+def save_settings(settings: dict) -> None:
+    SETTINGS_FILE.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding='utf-8')
+
+
+_SETTINGS = load_settings()
+OLLAMA_MODEL = _SETTINGS.get('ollama_model') or DEFAULT_OLLAMA_MODEL
 OLLAMA_THINK = "low"   # 'low' | 'medium' | 'high' | False
+# Solo los modelos con capacidad 'thinking' aceptan `think`; a los demas
+# Ollama les rechaza la llamada. Se guarda al elegir el modelo.
+OLLAMA_SUPPORTS_THINK = _SETTINGS.get('ollama_thinking', True)
+
+
+def _think_arg(value):
+    """`think` solo si el modelo razona; si no, se omite (None)."""
+    return value if OLLAMA_SUPPORTS_THINK else None
 # Intento de importación de WeasyPrint con manejo de errores para dependencias nativas faltantes
 try:
     from weasyprint import HTML  # type: ignore
@@ -59,7 +90,7 @@ TEMPLATES = {
         "margins": {"top": "12mm", "bottom": "10mm", "left": "13mm", "right": "13mm"},
         "fit_one_page": True,
         "base_font_px": 10.0,
-        "min_font_px": 7.6,
+        "warn_font_px": 6.0,   # no es un minimo: solo avisa por debajo de esto
         "step_px": 0.2,
     },
     # Derivado de 'generation', reordenado y ampliado para cubrir las cinco
@@ -70,7 +101,7 @@ TEMPLATES = {
         "margins": {"top": "12mm", "bottom": "10mm", "left": "13mm", "right": "13mm"},
         "fit_one_page": True,
         "base_font_px": 10.0,
-        "min_font_px": 7.2,
+        "warn_font_px": 6.0,   # no es un minimo: solo avisa por debajo de esto
         "step_px": 0.2,
     },
 }
@@ -85,9 +116,10 @@ MM_TO_PX = 96 / 25.4
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Genera YAMLs traducidos del CV, o PDFs a partir de cualquiera de ellos')
-    parser.add_argument('--mode', choices=['translate', 'pdf'], default=None,
+    parser.add_argument('--mode', choices=['translate', 'pdf', 'config'], default=None,
                         help="'translate' escribe un YAML nuevo traducido; 'pdf' renderiza "
-                             'uno existente (si se omite, se pregunta en la terminal)')
+                             "uno existente; 'config' abre los ajustes (si se omite, se "
+                             'pregunta en la terminal)')
     parser.add_argument('--input', default=None,
                         help='YAML de entrada: nombre o ruta. Si se omite, se listan los '
                              'del directorio para elegir')
@@ -371,8 +403,223 @@ def choose_mode(preselected: str = None) -> str:
     print("\nQué quieres hacer:")
     print("1.- Traducir un YAML y guardar el resultado como otro YAML")
     print("2.- Generar un PDF a partir de un YAML existente")
-    choice = input("Elige una opción (1 o 2) [default 2]: ").strip()
-    return 'translate' if choice == '1' else 'pdf'
+    print("3.- Configuración")
+    print("0.- Salir")
+    choice = input("Elige una opción (0-3) [default 2]: ").strip()
+    return {'1': 'translate', '3': 'config', '0': 'exit'}.get(choice, 'pdf')
+
+
+# --- Configuracion ------------------------------------------------------------
+# Ajustes que se guardan en settings.json y se aplican en las corridas
+# siguientes. Para agregar un ajuste: una funcion configure_<x>() y una linea
+# en CONFIG_OPTIONS.
+EMBEDDING_FAMILIES = frozenset({'bert', 'nomic-bert', 'jina-bert', 'xlm-roberta'})
+
+
+def _is_cloud_model(name: str, entry=None) -> bool:
+    """Los modelos de la nube de Ollama llevan el sufijo 'cloud' en el tag."""
+    tag = name.split(':', 1)[-1].lower()
+    return tag == 'cloud' or tag.endswith('-cloud') or bool(getattr(entry, 'remote_host', None))
+
+
+def list_llm_models() -> list:
+    """Modelos de lenguaje del Ollama local, incluidos los de la nube.
+
+    Se descartan los de embeddings: primero por las capacidades que reporta
+    `ollama show` ('completion' vs 'embedding'); si esta version no las
+    reporta, por familia o nombre. Devuelve [{name, cloud, thinking, size}].
+    """
+    response = ollama.list()
+    models = []
+    for entry in response.models:
+        name = entry.model
+        caps = None
+        with contextlib.suppress(Exception):
+            caps = ollama.show(name).capabilities
+        if caps:
+            if 'completion' not in caps:
+                continue
+            thinking = 'thinking' in caps
+        else:
+            family = (getattr(entry.details, 'family', '') or '').lower()
+            if family in EMBEDDING_FAMILIES or 'embed' in name.lower():
+                continue
+            thinking = True   # sin datos: se intenta y, si falla, se desactiva
+        size = getattr(entry, 'size', None) or 0
+        models.append({'name': name, 'cloud': _is_cloud_model(name, entry),
+                       'thinking': thinking, 'size': size})
+    return sorted(models, key=lambda m: (m['cloud'], m['name']))
+
+
+# Catalogo publico de modelos de la nube de Ollama (no requiere sesion para
+# listarlos; si para usarlos: `ollama signin` y creditos en la cuenta).
+CLOUD_CATALOG_URL = "https://ollama.com/api/tags"
+CLOUD_PAGE_SIZE = 10
+
+
+def cloud_local_name(name: str) -> str:
+    """Nombre del catalogo -> tag que acepta el Ollama local.
+
+    'gpt-oss:20b' -> 'gpt-oss:20b-cloud'; 'kimi-k2.6' -> 'kimi-k2.6:cloud'.
+    """
+    if _is_cloud_model(name):
+        return name
+    return f"{name}-cloud" if ':' in name else f"{name}:cloud"
+
+
+def list_cloud_models() -> list:
+    """Modelos de lenguaje del catalogo de la nube, del mas reciente al mas antiguo.
+
+    Solo los que declaran la capacidad 'completion' (se descartan embeddings y
+    otros usos). Devuelve [{name, cloud, thinking, vision, size, date}].
+    """
+    import urllib.request
+    request = urllib.request.Request(CLOUD_CATALOG_URL, headers={'User-Agent': 'cv-cli'})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        catalog = json.load(response).get('models', [])
+    models = []
+    for entry in catalog:
+        caps = entry.get('capabilities') or []
+        if 'completion' not in caps:
+            continue
+        models.append({'name': cloud_local_name(entry.get('model') or entry['name']),
+                       'cloud': True, 'thinking': 'thinking' in caps,
+                       'vision': 'vision' in caps, 'size': entry.get('size') or 0,
+                       'date': (entry.get('modified_at') or '')[:10]})
+    return sorted(models, key=lambda m: m['date'], reverse=True)
+
+
+def _save_model(settings: dict, name: str, thinking: bool) -> None:
+    global OLLAMA_MODEL, OLLAMA_SUPPORTS_THINK
+    settings['ollama_model'] = name
+    settings['ollama_thinking'] = thinking
+    save_settings(settings)
+    OLLAMA_MODEL, OLLAMA_SUPPORTS_THINK = name, thinking
+    print(f"Modelo guardado: {OLLAMA_MODEL}. Los YAML traducidos llevarán '{model_slug()}' en el nombre.")
+
+
+def _pick_local(settings: dict) -> None:
+    try:
+        models = [m for m in list_llm_models() if not m['cloud']]
+    except Exception as e:
+        print(f"[CONFIG][ERROR] No se pudo consultar Ollama: {e}")
+        print("Abre Ollama (o ejecuta 'ollama serve') y vuelve a intentarlo.")
+        return
+    if not models:
+        print("[CONFIG] No hay modelos de lenguaje locales. Descarga uno con 'ollama pull <modelo>'.")
+        return
+    print("\nModelos locales:")
+    for i, m in enumerate(models, start=1):
+        mark = "  [actual]" if m['name'] == OLLAMA_MODEL else ""
+        think = "razona" if m['thinking'] else ""
+        print(f"{i:>2}.- {m['name']:<28} {m['size'] / 1e9:>5.1f} GB  {think}{mark}")
+    choice = input(f"Elige una opción (1-{len(models)}) [Enter = volver]: ").strip()
+    if choice.isdigit() and 1 <= int(choice) <= len(models):
+        chosen = models[int(choice) - 1]
+        _save_model(settings, chosen['name'], chosen['thinking'])
+
+
+def _pick_cloud(settings: dict) -> None:
+    try:
+        models = list_cloud_models()
+    except Exception as e:
+        print(f"[CONFIG][ERROR] No se pudo leer el catálogo de la nube ({e}).")
+        print("Revisa la conexión a Internet; los modelos locales siguen disponibles.")
+        return
+    installed = set()
+    with contextlib.suppress(Exception):
+        installed = {m.model for m in ollama.list().models}
+    print("\nPara usar un modelo de la nube, Ollama debe tener sesión iniciada "
+          "('ollama signin') y la cuenta, créditos o suscripción.")
+
+    query, page = '', 0
+    while True:
+        shown = [m for m in models if query.lower() in m['name'].lower()]
+        pages = max(1, -(-len(shown) // CLOUD_PAGE_SIZE))
+        page = min(page, pages - 1)
+        start = page * CLOUD_PAGE_SIZE
+        title = f" que contienen '{query}'" if query else ""
+        print(f"\nModelos de la nube{title} (página {page + 1} de {pages}):")
+        if not shown:
+            print("  (ninguno)")
+        for i, m in enumerate(shown[start:start + CLOUD_PAGE_SIZE], start=start + 1):
+            size = f"{m['size'] / 1e9:>5.0f} GB" if m['size'] else "    —   "
+            tags = " · ".join(t for t, on in (("razona", m['thinking']), ("visión", m['vision'])) if on)
+            marks = ("  [actual]" if m['name'] == OLLAMA_MODEL else "") + \
+                    ("  [instalado]" if m['name'] in installed else "")
+            print(f"{i:>2}.- {m['name']:<30} {size}  {tags:<15} {m['date']}{marks}")
+        choice = input("Número para elegir · m = más · texto para filtrar · Enter = volver: ").strip()
+        if not choice:
+            if query:          # Enter con filtro activo: lo quita
+                query, page = '', 0
+                continue
+            return
+        if choice.lower() == 'm':
+            page = (page + 1) % pages
+        elif choice.isdigit():
+            n = int(choice)
+            if 1 <= n <= len(shown):
+                chosen = shown[n - 1]
+                _save_model(settings, chosen['name'], chosen['thinking'])
+                return
+            print("Número fuera de la lista.")
+        else:
+            query, page = choice, 0
+
+
+def _pick_manual(settings: dict) -> None:
+    name = input("Nombre del modelo tal como lo acepta Ollama (ej. gemma4:12b, kimi-k2.6:cloud): ").strip()
+    if not name:
+        return
+    thinking = True
+    try:
+        caps = ollama.show(name).capabilities or []
+        if caps and 'completion' not in caps:
+            print(f"[CONFIG][ERROR] '{name}' no es un modelo de lenguaje (capacidades: {', '.join(caps)}).")
+            return
+        thinking = 'thinking' in caps if caps else True
+    except Exception as e:
+        # Un modelo de la nube no descargado puede no responder a `show`:
+        # se guarda igual y la primera traduccion confirma si funciona.
+        print(f"[CONFIG][WARN] Ollama no reconoce '{name}' todavía ({e}); se guarda igualmente.")
+    _save_model(settings, name, thinking)
+
+
+def configure_model(settings: dict) -> None:
+    if not OLLAMA_AVAILABLE:
+        print("[CONFIG][ERROR] Falta el paquete 'ollama' en el entorno.")
+        return
+    local_count = cloud_count = '?'
+    with contextlib.suppress(Exception):
+        local_count = len([m for m in list_llm_models() if not m['cloud']])
+    with contextlib.suppress(Exception):
+        cloud_count = len(list_cloud_models())
+    print(f"\nModelo de traducción (actual: {OLLAMA_MODEL})")
+    print(f"1.- Locales ({local_count})")
+    print(f"2.- Nube ({cloud_count})")
+    print("3.- Escribir el nombre a mano")
+    print("0.- Volver")
+    choice = input("Elige una opción (0-3) [default 0]: ").strip()
+    {'1': _pick_local, '2': _pick_cloud, '3': _pick_manual}.get(choice, lambda s: None)(settings)
+
+
+CONFIG_OPTIONS = [
+    ("Modelo de traducción (Ollama)", configure_model),
+]
+
+
+def run_config() -> None:
+    """Submenu de ajustes. Vuelve al menu principal al terminar."""
+    settings = load_settings()
+    while True:
+        print("\nConfiguración:")
+        for i, (label, _) in enumerate(CONFIG_OPTIONS, start=1):
+            print(f"{i}.- {label}")
+        print("0.- Volver")
+        choice = input(f"Elige una opción (0-{len(CONFIG_OPTIONS)}) [default 0]: ").strip()
+        if not (choice.isdigit() and 1 <= int(choice) <= len(CONFIG_OPTIONS)):
+            return
+        CONFIG_OPTIONS[int(choice) - 1][1](settings)
 
 
 # --- Filtro de contenido por vacante ---------------------------------------
@@ -422,6 +669,181 @@ def prune_hidden(node, hidden: list):
     return node
 
 
+# --- Secciones: orden, titulos en la clave y secciones nuevas ---------------
+# Tres reglas, todas resueltas solo con el YAML:
+#  1. Las secciones se imprimen en el orden de sus claves en el YAML.
+#  2. `clave(Titulo)` renombra una seccion conocida sin cambiar su formato.
+#  3. Una clave desconocida es una seccion nueva con formato generico; su
+#     titulo es el texto entre parentesis o, si no lo hay, la clave misma.
+SECTION_KEY_RE = re.compile(r'^(?P<base>.*?)\s*\((?P<title>[^()]*)\)\s*$')
+
+# Claves de control o de cabecera: nunca son secciones ni admiten titulo.
+NON_SECTION_KEYS = frozenset({'personal_info', 'ui', 'ui_templates'})
+
+# Por template: clave del YAML -> bloques del template que dibuja, en orden.
+# Un bloque compartido por varias claves (la rejilla de `legacy`, los
+# extracurriculares de `capitalone`) se imprime donde aparece la primera.
+SECTION_BLOCKS = {
+    "legacy": {
+        "education": ["education"], "work_experience": ["experience"],
+        "projects": ["projects"], "skills": ["grid"], "courses": ["grid"],
+        "certifications": ["grid"],
+    },
+    "generation": {
+        "summary": ["summary"], "skills": ["technical_skills", "soft_skills"],
+        "projects": ["projects"], "work_experience": ["experience"],
+        "education": ["education"], "courses": ["credentials"],
+        "certifications": ["credentials"], "spoken_languages": ["spoken_languages"],
+    },
+    "capitalone": {
+        "summary": ["summary"], "education": ["education"],
+        "work_experience": ["experience"], "projects": ["projects"],
+        "skills": ["technical_skills", "soft_skills"],
+        "certifications": ["certifications"], "courses": ["courses"],
+        "academic_visits": ["academic_visits"],
+        "extracurriculars": ["extracurriculars"], "hackathons": ["extracurriculars"],
+        "spoken_languages": ["spoken_languages"],
+    },
+}
+
+# Por template: clave del YAML -> etiqueta `ui` que `clave(Titulo)` reemplaza.
+SECTION_TITLE_LABELS = {
+    "legacy": {
+        "education": "section_education", "work_experience": "section_experience",
+        "projects": "section_projects", "courses": "section_courses",
+        "certifications": "section_certifications",
+    },
+    "generation": {
+        "summary": "section_profile", "skills": "section_technical_skills",
+        "projects": "section_academic_project", "work_experience": "section_work",
+        "education": "section_education_gen", "courses": "section_courses_certs",
+        "certifications": "section_courses_certs",
+        "spoken_languages": "section_spoken_languages",
+    },
+    "capitalone": {
+        "summary": "section_profile", "education": "section_education_gen",
+        "work_experience": "section_technical_experience",
+        "projects": "section_technical_projects", "skills": "section_technical_skills",
+        "certifications": "section_certifications", "courses": "section_courses",
+        "academic_visits": "section_academic_visits",
+        "extracurriculars": "section_extracurriculars", "hackathons": "label_hackathons",
+        "spoken_languages": "section_spoken_languages",
+    },
+}
+
+# Union de lo que algun template sabe dibujar: lo demas es seccion nueva.
+KNOWN_SECTION_KEYS = frozenset(k for blocks in SECTION_BLOCKS.values() for k in blocks)
+
+# Campos de una entrada de seccion nueva, por papel (el primero presente gana).
+CUSTOM_TITLE_FIELDS = ('name', 'title', 'exp', 'role', 'degree', 'company', 'institution', 'language')
+CUSTOM_PERIOD_FIELDS = ('period', 'date', 'year')
+CUSTOM_TEXT_FIELDS = ('description', 'desc', 'focus', 'event', 'achievement')
+
+
+def split_section_key(key) -> tuple:
+    """'extracurriculars(Actividades)' -> ('extracurriculars', 'Actividades').
+
+    Sin parentesis, o con parentesis vacios, el titulo es None.
+    """
+    if not isinstance(key, str):
+        return key, None
+    match = SECTION_KEY_RE.match(key)
+    if not match or not match.group('base').strip():
+        return key.strip(), None
+    title = match.group('title').strip()
+    return match.group('base').strip(), (title or None)
+
+
+def _has_content(value) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    return bool(value)
+
+
+def normalize_sections(data: dict) -> dict:
+    """Separa las claves del YAML en datos, orden, titulos y secciones nuevas.
+
+    Devuelve `data` (claves conocidas sin parentesis), `order` (claves base en
+    el orden del YAML), `titles` (titulo entre parentesis de cada clave) y
+    `custom` (secciones nuevas: {'key', 'title', 'content'}).
+    """
+    clean, order, titles, custom = {}, [], {}, []
+    for raw_key, value in data.items():
+        base, title = split_section_key(raw_key)
+        if base in NON_SECTION_KEYS:
+            if base in clean:
+                raise ValueError(f"La clave '{base}' aparece dos veces en el YAML.")
+            clean[base] = value
+            continue
+        if base in KNOWN_SECTION_KEYS:
+            if base in clean:
+                raise ValueError(f"La seccion '{base}' aparece dos veces en el YAML "
+                                 f"(revisa '{raw_key}').")
+            clean[base] = value
+            order.append(base)
+            if title:
+                titles[base] = title
+            continue
+        # Seccion nueva: solo se imprime si tiene contenido.
+        if _has_content(value):
+            custom.append({'key': base, 'title': title or base, 'content': value})
+            order.append(('custom', len(custom) - 1))
+    return {'data': clean, 'order': order, 'titles': titles, 'custom': custom}
+
+
+def section_sequence(order: list, template_name: str, data: dict) -> list:
+    """Bloques del template en el orden del YAML, sin repetir los compartidos."""
+    blocks = SECTION_BLOCKS[template_name]
+    sequence, seen = [], set()
+    for entry in order:
+        if isinstance(entry, tuple):
+            sequence.append(f"custom:{entry[1]}")
+            continue
+        for block in blocks.get(entry, []):
+            if block not in seen:
+                seen.add(block)
+                sequence.append(block)
+    # Los clubes de `capitalone` salen de education[].Extracurricular activities:
+    # si no hay clave extracurriculars ni hackathons, el bloque va tras educacion.
+    if template_name == 'capitalone' and 'extracurriculars' not in seen:
+        has_clubs = any((edu or {}).get('Extracurricular activities')
+                        for edu in data.get('education') or [] if isinstance(edu, dict))
+        if has_clubs and 'education' in sequence:
+            sequence.insert(sequence.index('education') + 1, 'extracurriculars')
+    return sequence
+
+
+def custom_entries(content) -> dict:
+    """Normaliza el contenido de una seccion nueva para la plantilla generica.
+
+    Formas admitidas: un texto (parrafo), una lista de textos o de entradas
+    {name/title/..., period/date, description/desc/..., url}, o un mapping
+    clave -> valor que se imprime como lineas 'Clave: valor'.
+    """
+    if isinstance(content, str):
+        return {'paragraph': content.strip(), 'items': []}
+    if isinstance(content, dict):
+        lines = []
+        for key, value in content.items():
+            if isinstance(value, list):
+                value = ' | '.join(str(v) for v in value)
+            if _has_content(value):
+                lines.append({'label': str(key), 'text': str(value)})
+        return {'paragraph': None, 'items': [], 'lines': lines}
+    items = []
+    for item in content or []:
+        if isinstance(item, dict):
+            title = next((item[f] for f in CUSTOM_TITLE_FIELDS if _has_content(item.get(f))), None)
+            period = next((item[f] for f in CUSTOM_PERIOD_FIELDS if _has_content(item.get(f))), None)
+            text = next((item[f] for f in CUSTOM_TEXT_FIELDS if _has_content(item.get(f))), None)
+            bullets = [line.strip() for line in str(text).split('\n') if line.strip()] if text else []
+            items.append({'title': title, 'period': period, 'url': item.get('url'),
+                          'bullets': bullets})
+        elif _has_content(item):
+            items.append({'title': None, 'period': None, 'url': None, 'bullets': [str(item)]})
+    return {'paragraph': None, 'items': items}
+
+
 def markdown_links(text: str) -> str:
     if not isinstance(text, str):
         return text
@@ -445,39 +867,91 @@ def _usable_page_px(margins: dict) -> tuple:
     return int(width), int(height)
 
 
-def _fit_to_one_page(page, cfg: dict) -> None:
-    """Reduce la escala tipografica hasta que el contenido quepa en una pagina.
+# Ningun contenido se recorta para caber: la letra baja lo necesario. Este
+# piso solo existe para que el bucle termine; por debajo de `warn_font_px`
+# se avisa de que la impresion sera dificil de leer.
+FIT_ABSOLUTE_FLOOR_PX = 2.0
 
-    El template expone `--fit-font` en :root y todo lo demas usa unidades
-    relativas, asi que mover esa unica variable reescala el documento completo.
+
+FIT_CEILING_PX = 300.0     # tope de crecimiento: basta para llenar con muy poco contenido
+FIT_PRECISION_PX = 0.01    # resolucion de la busqueda binaria
+
+# Mide con el body ya como columna flexible: asi la altura medida es la misma
+# que tendra al final, cuando el sobrante se reparte entre secciones.
+_FIT_MEASURE_JS = """(s) => {
+  document.documentElement.style.setProperty('--fit-font', s + 'px');
+  const b = document.body.style;
+  b.display = 'flex'; b.flexDirection = 'column';
+  b.height = 'auto'; b.justifyContent = 'flex-start';
+  return document.body.scrollHeight;
+}"""
+
+# Reparte el sobrante (menos de una linea, tras la busqueda) entre secciones:
+# la cabecera queda arriba y la ultima seccion termina en el margen inferior.
+_FIT_FILL_JS = """(h) => {
+  const b = document.body.style;
+  b.height = h + 'px'; b.justifyContent = 'space-between';
+  const last = document.body.lastElementChild;
+  return last ? last.getBoundingClientRect().bottom : 0;
+}"""
+
+# Ultimo ajuste aplicado, para diagnostico y para las pruebas de llenado.
+LAST_FIT = {}
+
+
+def _fit_to_one_page(page, cfg: dict, max_px: float = None) -> float:
+    """Ajusta la letra para que el contenido llene exactamente una pagina.
+
+    Busca por biseccion el MAYOR tamano de `--fit-font` con el que todo cabe:
+    crece si sobra espacio y reduce si no cabe. El template expone esa
+    variable en :root y el resto usa unidades relativas, asi que mueve el
+    documento completo. Despues reparte el sobrante entre secciones para que
+    la pagina quede llena al 100 %. Devuelve el tamano aplicado.
     """
     usable_w, usable_h = _usable_page_px(cfg['margins'])
     page.set_viewport_size({"width": usable_w, "height": usable_h})
     with contextlib.suppress(Exception):
         page.emulate_media(media="print")
+    # 1 px de holgura: el redondeo de Chromium al paginar no debe abrir una
+    # segunda pagina con una linea vacia.
+    target = usable_h - 1
 
-    base = cfg.get('base_font_px', 10.0)
-    minimum = cfg.get('min_font_px', 7.6)
-    step = cfg.get('step_px', 0.2)
+    def measure(size):
+        return page.evaluate(_FIT_MEASURE_JS, round(size, 3))
 
-    size = base
-    attempt = 0
-    while size >= minimum - 1e-9:
-        attempt += 1
-        page.evaluate(
-            "(s) => document.documentElement.style.setProperty('--fit-font', s + 'px')",
-            round(size, 2)
-        )
-        height = page.evaluate("() => document.body.scrollHeight")
-        ratio = height / usable_h
-        status = "OK" if height <= usable_h else ""
-        print(f"[FIT] intento {attempt}: {round(size, 2)}px -> {height}px ({ratio:.2f} paginas) {status}".rstrip())
-        if height <= usable_h:
-            return
-        size -= step
+    ceiling = min(FIT_CEILING_PX, max_px) if max_px else FIT_CEILING_PX
+    base = min(cfg.get('base_font_px', 10.0), ceiling)
+    if measure(base) <= target:
+        lo, hi = base, ceiling
+        if measure(hi) <= target:
+            lo = hi
+    else:
+        lo, hi = FIT_ABSOLUTE_FLOOR_PX, base
 
-    print(f"[FIT][WARN] Ni con el minimo legible ({minimum}px) el contenido cabe en una pagina.")
-    print("[FIT][WARN] Recorta contenido del YAML (proyectos o cursos antiguos) o baja 'min_font_px'.")
+    while hi - lo > FIT_PRECISION_PX:
+        mid = (lo + hi) / 2
+        if measure(mid) <= target:
+            lo = mid
+        else:
+            hi = mid
+
+    # Se redondea HACIA ABAJO y se verifica: el tamano redondeado al alza
+    # puede pasar el margen por 1-2 px y abrir una segunda pagina.
+    LAST_FIT.clear()
+    size = math.floor(lo * 100) / 100
+    height = measure(size)
+    while height > target and size - 0.01 >= FIT_ABSOLUTE_FLOOR_PX:
+        size = round(size - 0.01, 2)
+        height = measure(size)
+    if height > target:
+        print(f"[FIT][WARN] Ni con {size}px cabe en una pagina ({height}px de {target}px).")
+        return size
+    bottom = page.evaluate(_FIT_FILL_JS, target)
+    LAST_FIT.clear()
+    LAST_FIT.update(size=size, content=height, target=target, bottom=bottom)
+    print(f"[FIT] {size}px: contenido {height}px de {target}px "
+          f"({height / target:.1%}); el sobrante se reparte entre secciones -> 100%")
+    return size
 
 
 def _count_pdf_pages(pdf_path: Path) -> int:
@@ -517,22 +991,32 @@ def _playwright_pdf(html_content: str, output_file: Path, base_dir: Path, cfg: d
                 page.evaluate('window.stop()')
                 print('[WARN] Recursos externos lentos; se imprime con los recursos disponibles.')
 
-            if cfg.get('fit_one_page'):
-                _fit_to_one_page(page, cfg)
+            def print_pdf():
+                page.pdf(path=str(output_file), format='A4',
+                         print_background=True, margin=cfg['margins'])
 
-            page.pdf(
-                path=str(output_file),
-                format='A4',
-                print_background=True,
-                margin=cfg['margins']
-            )
+            if cfg.get('fit_one_page'):
+                size = _fit_to_one_page(page, cfg)
+                print_pdf()
+                # La altura medida y la paginacion real pueden diferir (saltos
+                # de pagina evitados, redondeos): se cuenta el PDF y, si salio
+                # mas de una pagina, se sigue reduciendo y se reimprime.
+                step = cfg.get('step_px', 0.2)
+                while _count_pdf_pages(output_file) > 1 and size - step >= FIT_ABSOLUTE_FLOOR_PX:
+                    print(f"[FIT] El PDF salio con {_count_pdf_pages(output_file)} paginas; se reduce y reimprime.")
+                    size = _fit_to_one_page(page, cfg, max_px=size - step)
+                    print_pdf()
+                pages = _count_pdf_pages(output_file)
+                if pages > 1:
+                    print(f"[FIT][WARN] Ni con {size}px cabe en una pagina: el PDF tiene {pages}.")
+                warn = cfg.get('warn_font_px', 6.0)
+                if size < warn:
+                    print(f"[FIT][WARN] Letra a {size}px, por debajo de {warn}px: todo cabe, "
+                          "pero impreso sera dificil de leer.")
+            else:
+                print_pdf()
             browser.close()
         print(f"Generated {output_file.name} (Playwright)")
-
-        if cfg.get('fit_one_page'):
-            pages = _count_pdf_pages(output_file)
-            if pages > 1:
-                print(f"[FIT][WARN] El PDF final tiene {pages} paginas, no 1. Revisa el contenido del YAML.")
         return True
     except Exception as e:  # noqa
         print(f"[PLAYWRIGHT][ERROR] {e}")
@@ -559,10 +1043,31 @@ def render_to_pdf(data: dict, lang: str, output_name: str = None, template_name:
     env.filters['strip_links'] = strip_markdown_links
     template = env.get_template(cfg['template'])
 
+    sections = normalize_sections(data)
+    data = sections['data']
+
+    # `clave(Titulo)` gana sobre ui/ui_templates. En `generation`, cursos y
+    # certificaciones comparten encabezado: manda la primera con titulo.
+    ui = resolve_ui(data, lang, template_name)
+    title_labels = SECTION_TITLE_LABELS[template_name]
+    applied = set()
+    for key in sections['order']:
+        if isinstance(key, tuple) or key not in sections['titles'] or key not in title_labels:
+            continue
+        label = title_labels[key]
+        if label not in applied:
+            ui[label] = sections['titles'][key]
+            applied.add(label)
+
     # Las claves de configuración no pueden colisionar con los argumentos Jinja.
     context = {key: value for key, value in data.items()
                if key not in {'ui', 'ui_templates'}}
-    context.update(lang=lang, ui=resolve_ui(data, lang, template_name), css=cfg['css'])
+    context.update(
+        lang=lang, ui=ui, css=cfg['css'],
+        section_sequence=section_sequence(sections['order'], template_name, data),
+        custom_sections=[dict(section, **custom_entries(section['content']))
+                         for section in sections['custom']],
+    )
     html_content = template.render(**context)
 
     if output_name:
@@ -706,7 +1211,7 @@ def detect_language(text: str) -> str:
         # think=False a proposito: identificar un idioma no requiere razonamiento.
         response = ollama.chat(model=OLLAMA_MODEL,
                                messages=[{'role': 'user', 'content': prompt}],
-                               think=False)
+                               think=_think_arg(False))
         content = response['message']['content'].strip().lower()
         token = re.sub(r'[^a-z]', '', content)[:2]
         return 'en' if token == 'en' else 'es'
@@ -878,9 +1383,15 @@ def _ollama_translate(masked: str, target_lang: str, kind: str, correction: str 
             "\n\n<correction>Your previous answer was rejected. "
             + correction +
             " Produce the translation again, obeying that rule exactly.</correction>")
+    global OLLAMA_SUPPORTS_THINK
     try:
-        response = ollama.chat(model=OLLAMA_MODEL, messages=messages, think=OLLAMA_THINK)
+        response = ollama.chat(model=OLLAMA_MODEL, messages=messages, think=_think_arg(OLLAMA_THINK))
     except Exception as e:
+        # Modelo elegido a mano sin capacidad 'thinking': Ollama rechaza
+        # `think`. Se desactiva para el resto de la corrida y se reintenta.
+        if OLLAMA_SUPPORTS_THINK and 'think' in str(e).lower():
+            OLLAMA_SUPPORTS_THINK = False
+            return _ollama_translate(masked, target_lang, kind, correction)
         print(f"[Ollama][ERROR] Falla en traduccion: {e}")
         return None
     return _clean_model_output(response['message']['content']) or None
@@ -1045,9 +1556,80 @@ def _translate_relevant_project(item, t):
     return t(item, 'bullets')
 
 
+def _translate_custom_content(content, t):
+    """Contenido de una seccion nueva: mismas formas que acepta `custom_entries`.
+
+    Se traducen titulos, periodos y descripciones; `url`, `year` e `include`
+    pasan intactos.
+    """
+    if isinstance(content, str):
+        return t(content, 'bullets' if '\n' in content.strip() else 'prose')
+    if isinstance(content, dict):
+        out = {}
+        for key, value in content.items():
+            if isinstance(value, list):
+                value = [t(v, 'list_item') if isinstance(v, str) else v for v in value]
+            elif isinstance(value, str):
+                value = t(value, 'short')
+            out[t(key, 'short') if isinstance(key, str) else key] = value
+        return out
+    out = []
+    for item in content or []:
+        if isinstance(item, dict):
+            item = copy.deepcopy(item)
+            for field in CUSTOM_TITLE_FIELDS + ('period', 'date'):
+                if isinstance(item.get(field), str):
+                    item[field] = t(item[field], 'short')
+            for field in CUSTOM_TEXT_FIELDS:
+                if isinstance(item.get(field), str):
+                    item[field] = t(item[field], 'bullets')
+            out.append(item)
+        else:
+            out.append(t(item, 'short') if isinstance(item, str) else item)
+    return out
+
+
 def translate_cv_data(data: dict, target_lang: str) -> dict:
-    global _PII_TERMS
+    """Traduce el CV conservando el orden de las claves del YAML.
+
+    Las claves `clave(Titulo)` se traducen solo dentro del parentesis; las
+    secciones nuevas traducen su titulo (la clave, si no hay parentesis) y su
+    contenido.
+    """
     validate_ui(data)
+    layout, known, custom = [], {}, {}
+    for raw_key, value in data.items():
+        base, title = split_section_key(raw_key)
+        if base in NON_SECTION_KEYS or base in KNOWN_SECTION_KEYS:
+            if base in known:
+                raise ValueError(f"La seccion '{base}' aparece dos veces en el YAML (revisa '{raw_key}').")
+            known[base] = value
+            layout.append(('known', base, title))
+        else:
+            custom[raw_key] = value
+            layout.append(('custom', base, title, raw_key))
+
+    translated = _translate_known_sections(known, target_lang)
+
+    def t(text, kind='short'):
+        if not text or not isinstance(text, str): return text
+        return translate_text(text, target_lang, kind)
+
+    out = {}
+    for entry in layout:
+        if entry[0] == 'known':
+            _, base, title = entry
+            out[f"{base}({t(title)})" if title else base] = translated[base]
+        else:
+            _, base, title, raw_key = entry
+            key = f"{base}({t(title)})" if title else t(base)
+            out[key] = _translate_custom_content(custom[raw_key], t)
+    print("--- Traducción finalizada ---")
+    return out
+
+
+def _translate_known_sections(data: dict, target_lang: str) -> dict:
+    global _PII_TERMS
     translated = copy.deepcopy(data)
 
     # Terminos identificatorios que se enmascararan en CADA llamada al modelo.
@@ -1156,8 +1738,6 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
             spoken['language'] = t(spoken['language'], 'list_item')
 
     # Tecnologías (skills) no se traducen.
-
-    print("--- Traducción finalizada ---")
     return translated
 
 
@@ -1198,6 +1778,29 @@ def resolve_input_lang(path: Path, preselected: str = None) -> str:
     return choose_lang(f"{path.name} no declara idioma en su nombre. ¿En qué idioma está?")
 
 
+def check_model_ready() -> str:
+    """Prueba el modelo con una llamada minima. Devuelve el problema o ''."""
+    if not OLLAMA_AVAILABLE:
+        return "Falta el paquete 'ollama' en el entorno."
+    try:
+        ollama.chat(model=OLLAMA_MODEL, messages=[{'role': 'user', 'content': 'Reply: ok'}],
+                    options={'num_predict': 8})
+        return ''
+    except Exception as e:
+        text = str(e)
+        status = getattr(e, 'status_code', None)
+        if status == 402 or 'credits' in text.lower():
+            return (f"El modelo de la nube '{OLLAMA_MODEL}' requiere créditos o suscripción "
+                    f"en la cuenta de Ollama: {text}")
+        if status in (401, 403):
+            return f"Ollama no tiene sesión iniciada para la nube; ejecuta 'ollama signin'. ({text})"
+        if status == 404 or 'not found' in text.lower():
+            return f"Ollama no encuentra el modelo '{OLLAMA_MODEL}'. ({text})"
+        if isinstance(e, ConnectionError) or 'connect' in text.lower():
+            return "No se pudo conectar con Ollama; ábrelo (o ejecuta 'ollama serve')."
+        return f"El modelo '{OLLAMA_MODEL}' no respondió: {text}"
+
+
 def run_translate(args) -> None:
     """Traduce un YAML completo y lo guarda como un YAML nuevo."""
     src_path = choose_yaml(args.input, "YAML base a traducir")
@@ -1219,6 +1822,15 @@ def run_translate(args) -> None:
     print(f"\nOrigen : {src_path.name} ({src_lang})")
     print(f"Destino: {out_path.name} ({dst_lang})")
     print(f"Modelo : {OLLAMA_MODEL}")
+
+    # Una llamada de prueba antes de las ~95 reales: si el modelo no responde
+    # (Ollama apagado, modelo inexistente, nube sin creditos), cada campo
+    # fallaria por separado y el YAML saldria sin traducir.
+    problem = check_model_ready()
+    if problem:
+        print(f"[ERROR] {problem}")
+        print("Elige otro modelo en el menú Configuración → Modelo de traducción.")
+        sys.exit(1)
 
     # A diferencia del modo pdf, aqui NO se aplica prune_hidden: el archivo
     # derivado debe ser un espejo fiel del base, con sus marcas `include`
@@ -1252,22 +1864,52 @@ def run_pdf(args) -> None:
         sys.exit(1)
 
 
-def main():
+RUNNERS = {'translate': lambda args: run_translate(args),
+           'pdf': lambda args: run_pdf(args),
+           'config': lambda args: run_config()}
+
+
+def run_once(mode: str, args) -> bool:
+    """Ejecuta una operacion del menu. Devuelve False si fallo.
+
+    Atrapa tambien SystemExit: run_pdf/run_translate terminan con sys.exit(1)
+    ante un error, y en el menu eso no debe cerrar la ventana.
+    """
+    try:
+        RUNNERS[mode](args)
+        return True
+    except SystemExit as e:
+        return not e.code
+    except FileNotFoundError as fnf:
+        print(f"[ERROR] Archivo no encontrado: {fnf}")
+    except Exception:
+        print("[ERROR] Ejecución inesperada:")
+        traceback.print_exc()
+    return False
+
+
+def main() -> int:
     args = parse_args()
-    mode = choose_mode(args.mode)
-    if mode == 'translate':
-        run_translate(args)
-    else:
-        run_pdf(args)
+    # Con --mode (uso desde scripts) se ejecuta una vez y se sale con su codigo.
+    if args.mode:
+        return 0 if run_once(args.mode, args) else 1
+
+    # Menu interactivo: tras cada operacion, con exito o error, se vuelve al
+    # menu principal. Solo '0.- Salir' (o Ctrl+C) lo cierra.
+    while True:
+        try:
+            mode = choose_mode()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            return 0
+        if mode == 'exit':
+            return 0
+        try:
+            if not run_once(mode, args):
+                print("[MENU] La operación terminó con error; vuelves al menú principal.")
+        except KeyboardInterrupt:
+            print("\n[MENU] Operación cancelada; vuelves al menú principal.")
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except FileNotFoundError as fnf:
-        print(f"[ERROR] Archivo no encontrado: {fnf}")
-        sys.exit(1)
-    except Exception as ex:
-        print("[ERROR] Ejecución inesperada:")
-        traceback.print_exc()
-        sys.exit(1)
+    sys.exit(main())

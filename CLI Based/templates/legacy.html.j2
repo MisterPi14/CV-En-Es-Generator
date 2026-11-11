@@ -11,6 +11,7 @@
     {{- item | markdown_links | safe -}}
   {%- endif -%}
 {%- endmacro -%}
+{% from '_custom_section.html.j2' import custom_section %}
 <!DOCTYPE html>
 <html lang="{{ lang }}">
 <head>
@@ -40,136 +41,147 @@
     </div>
   </header>
 
-  <div class="main-content">
-    <section class="education">
-      <h2>{{ ui.section_education }}</h2>
-      {% for edu in education %}
-      <div class="edu-item">
-        <div class="degree">{{ edu.degree | markdown_links | safe }}</div>
-        <div class="institution-period">{{ edu.institution | markdown_links | safe }} · <span class="period">{{ edu.period }}</span>{% if edu.gpa %} · <span>{{ ui.label_gpa }}: {{ edu.gpa }}</span>{% endif %}</div>
-        {% if edu['Relevant subjects'] %}
-          <p class="edu-detail"><strong>{{ ui.label_relevant_subjects }}</strong> {{ edu['Relevant subjects'] | markdown_links | safe }}</p>
-        {% endif %}
-        {% if edu['Extracurricular activities'] %}
-          <div class="edu-detail">
-            <strong>{{ ui.label_extracurricular_activities }}</strong>
-            <ul>
-            {% for activity in edu['Extracurricular activities'] %}
-              <li>{{ activity | markdown_links | safe }}</li>
-            {% endfor %}
-            </ul>
-          </div>
-        {% endif %}
-        {% if edu['Relevant projects'] %}
-          <div class="edu-detail">
-            <strong>{{ ui.label_relevant_projects }}</strong>
-            <ul>
-            {% for r_proj in edu['Relevant projects'] %}
-              {% if r_proj is mapping %}
-                <li>
-                  {{ r_proj.title | markdown_links | safe }}
-                  {% if r_proj.subitems %}
-                    <ul>
-                    {% for sub_proj in r_proj.subitems %}
-                      <li>{{ sub_proj | markdown_links | safe }}</li>
-                    {% endfor %}
-                    </ul>
-                  {% endif %}
-                </li>
-              {% else %}
-                <li>{{ r_proj | markdown_links | safe }}</li>
-              {% endif %}
-            {% endfor %}
-            </ul>
-          </div>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </section>
-
-    <section class="experience">
-      <h2>{{ ui.section_experience }}</h2>
-      {% for job in work_experience %}
-      <div class="job">
-        <div class="job-header">
-          <div class="role-company"><span class="role">{{ job.role | default(job.title) | markdown_links | safe }}</span><span class="company-divider">|</span><span class="company">{{ job.company | markdown_links | safe }}</span></div>
-          <div class="period">{{ job.period | default(job.location) }}</div>
+  {#- Las secciones salen en el orden de sus claves en el YAML (ver
+      section_sequence() en build.py). La rejilla inferior es un solo bloque
+      y se imprime donde aparece la primera de skills/courses/certifications. -#}
+  {% for block in section_sequence %}
+  {% if block == 'education' and education %}
+  <section class="education">
+    <h2>{{ ui.section_education }}</h2>
+    {% for edu in education %}
+    <div class="edu-item">
+      <div class="degree">{{ edu.degree | markdown_links | safe }}</div>
+      <div class="institution-period">{{ edu.institution | markdown_links | safe }} · <span class="period">{{ edu.period }}</span>{% if edu.gpa %} · <span>{{ ui.label_gpa }}: {{ edu.gpa }}</span>{% endif %}</div>
+      {% if edu['Relevant subjects'] %}
+        <p class="edu-detail"><strong>{{ ui.label_relevant_subjects }}</strong> {{ edu['Relevant subjects'] | markdown_links | safe }}</p>
+      {% endif %}
+      {% if edu['Extracurricular activities'] %}
+        <div class="edu-detail">
+          <strong>{{ ui.label_extracurricular_activities }}</strong>
+          <ul>
+          {% for activity in edu['Extracurricular activities'] %}
+            <li>{{ activity | markdown_links | safe }}</li>
+          {% endfor %}
+          </ul>
         </div>
+      {% endif %}
+      {% if edu['Relevant projects'] %}
+        <div class="edu-detail">
+          <strong>{{ ui.label_relevant_projects }}</strong>
+          <ul>
+          {% for r_proj in edu['Relevant projects'] %}
+            {% if r_proj is mapping %}
+              <li>
+                {{ r_proj.title | markdown_links | safe }}
+                {% if r_proj.subitems %}
+                  <ul>
+                  {% for sub_proj in r_proj.subitems %}
+                    <li>{{ sub_proj | markdown_links | safe }}</li>
+                  {% endfor %}
+                  </ul>
+                {% endif %}
+              </li>
+            {% else %}
+              <li>{{ r_proj | markdown_links | safe }}</li>
+            {% endif %}
+          {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% elif block == 'experience' and work_experience %}
+  <section class="experience">
+    <h2>{{ ui.section_experience }}</h2>
+    {% for job in work_experience %}
+    <div class="job">
+      <div class="job-header">
+        <div class="role-company"><span class="role">{{ job.role | default(job.title) | markdown_links | safe }}</span><span class="company-divider">|</span><span class="company">{{ job.company | markdown_links | safe }}</span></div>
+        <div class="period">{{ job.period | default(job.location) }}</div>
+      </div>
+      <ul class="job-desc">
+        {% for line in job.description.strip().split('\n') %}
+          {% if line %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </section>
+  {% elif block == 'projects' %}
+  {% if projects %}
+  <section class="projects">
+    <h2>{{ ui.section_projects }}</h2>
+    {% for proj in projects %}
+    <div class="job">
+      <div class="job-header project-header">
+        <div class="role-company"><span class="role">{{ proj.title | markdown_links | safe }}</span></div>
+        <div class="period">{{ proj.period }}</div>
+      </div>
+      {% set proj_lines = proj.description.strip().split('\n') %}
+      {% if proj_lines and proj_lines[0].strip() %}
+        <p class="project-lead">{{ proj_lines[0] | markdown_links | safe }}</p>
+      {% endif %}
+      {% if proj_lines|length > 1 %}
         <ul class="job-desc">
-          {% for line in job.description.strip().split('\n') %}
-            {% if line %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
+          {% for line in proj_lines[1:] %}
+            {% if line.strip() %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
           {% endfor %}
         </ul>
-      </div>
-      {% endfor %}
-    </section>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+  {% elif block == 'grid' %}
+    <div class="bottom-metrics-grid">
+      {% if skills and skills.programming_languages %}
+      <section class="skills-lang">
+        <h2>{{ ui.section_languages }}</h2>
+        <p class="bottom-paragraph">
+          {% for lang in skills.programming_languages %}
+          {{ lang }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </p>
+      </section>
+      {% endif %}
 
-    {% if projects %}
-    <section class="projects">
-      <h2>{{ ui.section_projects }}</h2>
-      {% for proj in projects %}
-      <div class="job">
-        <div class="job-header project-header">
-          <div class="role-company"><span class="role">{{ proj.title | markdown_links | safe }}</span></div>
-          <div class="period">{{ proj.period }}</div>
-        </div>
-        {% set proj_lines = proj.description.strip().split('\n') %}
-        {% if proj_lines and proj_lines[0].strip() %}
-          <p class="project-lead">{{ proj_lines[0] | markdown_links | safe }}</p>
-        {% endif %}
-        {% if proj_lines|length > 1 %}
-          <ul class="job-desc">
-            {% for line in proj_lines[1:] %}
-              {% if line.strip() %}<li>{{ line | markdown_links | safe }}</li>{% endif %}
-            {% endfor %}
-          </ul>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </section>
-    {% endif %}
-  </div>
+      {% if skills and skills.technologies_and_frameworks %}
+      <section class="skills-tech">
+        <h2>{{ ui.section_technologies }}</h2>
+        <p class="bottom-paragraph">
+          {% for tech in skills.technologies_and_frameworks %}
+          {{ tech }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </p>
+      </section>
+      {% endif %}
 
-  <div class="bottom-metrics-grid">
-    <section class="skills-lang">
-      <h2>{{ ui.section_languages }}</h2>
-      <p class="bottom-paragraph">
-        {% for lang in skills.programming_languages %}
-        {{ lang }}{% if not loop.last %}, {% endif %}
-        {% endfor %}
-      </p>
-    </section>
+      {% if courses %}
+      <section class="courses">
+        <h2>{{ ui.section_courses }}</h2>
+        <ul class="bottom-list">
+          {% for course in courses %}
+          <li>{{ credential(course) }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
 
-    <section class="skills-tech">
-      <h2>{{ ui.section_technologies }}</h2>
-      <p class="bottom-paragraph">
-        {% for tech in skills.technologies_and_frameworks %}
-        {{ tech }}{% if not loop.last %}, {% endif %}
-        {% endfor %}
-      </p>
-    </section>
-
-    {% if courses %}
-    <section class="courses">
-      <h2>{{ ui.section_courses }}</h2>
-      <ul class="bottom-list">
-        {% for course in courses %}
-        <li>{{ credential(course) }}</li>
-        {% endfor %}
-      </ul>
-    </section>
-    {% endif %}
-
-    {% if certifications %}
-    <section class="certifications">
-      <h2>{{ ui.section_certifications }}</h2>
-      <ul class="bottom-list">
-        {% for cert in certifications %}
-        <li>{{ credential(cert) }}</li>
-        {% endfor %}
-      </ul>
-    </section>
-    {% endif %}
-  </div>
+      {% if certifications %}
+      <section class="certifications">
+        <h2>{{ ui.section_certifications }}</h2>
+        <ul class="bottom-list">
+          {% for cert in certifications %}
+          <li>{{ credential(cert) }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+    </div>
+  {% elif block.startswith('custom:') %}
+    {{ custom_section(custom_sections[block[7:] | int], 'legacy') }}
+  {% endif %}
+  {% endfor %}
 </body>
 </html>

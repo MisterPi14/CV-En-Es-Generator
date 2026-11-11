@@ -1,0 +1,69 @@
+{#- Seccion nueva: cualquier clave del YAML que ningun template conoce.
+    `section` llega normalizada por custom_entries() en build.py:
+      title      titulo (texto entre parentesis o la clave misma)
+      paragraph  texto suelto, si el contenido era un string
+      lines      [{label, text}], si el contenido era un mapping
+      items      [{title, period, url, bullets}], si era una lista
+    `style` elige las clases del template: 'block' (generation, capitalone)
+    o 'legacy'. No hay estilos propios: se reutilizan los de cada hoja, asi
+    que la seccion hereda el aspecto y el auto-ajuste de tamano. -#}
+{% macro item_title(item) -%}
+  {%- if item.url %}<a href="{{ item.url }}" target="_blank">{{ item.title | strip_links }}</a>{% else %}{{ item.title | markdown_links | safe }}{% endif -%}
+{%- endmacro %}
+
+{% macro custom_section(section, style='block') -%}
+{%- if style == 'legacy' %}
+    <section class="projects custom-section">
+      <h2>{{ section.title }}</h2>
+      {% if section.paragraph %}<p class="project-lead">{{ section.paragraph | markdown_links | safe }}</p>{% endif %}
+      {% if section.lines %}
+      <ul class="job-desc">
+        {% for line in section.lines %}<li><strong>{{ line.label }}:</strong> {{ line.text | markdown_links | safe }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% for item in section['items'] %}
+        {% if item.title %}
+        <div class="job">
+          <div class="job-header project-header">
+            <div class="role-company"><span class="role">{{ item_title(item) }}</span></div>
+            {% if item.period %}<div class="period">{{ item.period }}</div>{% endif %}
+          </div>
+          {% if item.bullets %}
+          <ul class="job-desc">
+            {% for line in item.bullets %}<li>{{ line | markdown_links | safe }}</li>{% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        {% else %}
+        <ul class="job-desc">
+          {% for line in item.bullets %}<li>{{ line | markdown_links | safe }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+      {% endfor %}
+    </section>
+{%- else %}
+  <section class="block custom-section">
+    <h2>{{ section.title }}</h2>
+    {% if section.paragraph %}<p class="paragraph">{{ section.paragraph | markdown_links | safe }}</p>{% endif %}
+    {% for line in section.lines or [] %}
+    <div class="meta"><span class="meta-label">{{ line.label }}:</span> {{ line.text | markdown_links | safe }}</div>
+    {% endfor %}
+    {% for item in section['items'] %}
+      {% if item.title %}
+      <div class="entry">
+        <div class="entry-title">{{ item_title(item) }}{% if item.period %} <span class="period">({{ item.period }})</span>{% endif %}</div>
+        {% if item.bullets %}
+        <ul class="bullets">
+          {% for line in item.bullets %}<li>{{ line | markdown_links | safe }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      {% else %}
+      <ul class="bullets">
+        {% for line in item.bullets %}<li>{{ line | markdown_links | safe }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    {% endfor %}
+  </section>
+{%- endif %}
+{%- endmacro %}

@@ -52,7 +52,9 @@ echo Se requiere Python instalado y acceso a Internet si faltan dependencias.
 set "APP_EXIT_CODE=1"
 
 :finish
-rem Al abrir con doble clic, conservar el resultado visible antes de cerrar.
-if "%~1"=="" pause
+rem El menu vuelve a si mismo tras cada operacion y solo termina con
+rem "0.- Salir". Se pausa unicamente si algo fallo (p. ej. al preparar el
+rem entorno), para que el error siga visible al abrir con doble clic.
+if "%~1"=="" if not "%APP_EXIT_CODE%"=="0" pause
 popd
 exit /b %APP_EXIT_CODE%
