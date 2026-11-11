@@ -7,7 +7,11 @@ import traceback
 import tempfile
 import contextlib
 import copy
+import io
 import json
+import shutil
+import threading
+import time
 import math
 import re
 
@@ -1556,6 +1560,163 @@ def _translate_relevant_project(item, t):
     return t(item, 'bullets')
 
 
+# --- Barra de progreso de la traduccion ------------------------------------
+# Una linea fija al pie de la terminal: los mensajes normales se imprimen
+# encima y la barra se redibuja debajo. Un hilo la refresca cada 0.25 s para
+# que el cronometro de la llamada en curso avance mientras el modelo genera.
+# Si la salida no es una terminal (tuberia, pruebas), no se dibuja nada.
+_FIELD_HOOK = None   # _FieldCounter (pasada en seco), ProgressBar o None
+
+
+class _FieldCounter:
+    """Pasada en seco: cuenta los campos que irian al modelo, sin llamarlo."""
+    def __init__(self):
+        self.count = 0
+
+
+def _translate_field(text: str, target_lang: str, kind: str) -> str:
+    """Punto unico por el que pasa cada campo traducible del CV."""
+    hook = _FIELD_HOOK
+    if isinstance(hook, _FieldCounter):
+        hook.count += 1
+        return text
+    if hook is not None:
+        hook.begin(kind, text)
+    try:
+        return translate_text(text, target_lang, kind)
+    finally:
+        if hook is not None:
+            hook.advance()
+
+
+def _fmt_time(seconds: float) -> str:
+    seconds = int(max(0, seconds))
+    return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+
+class _BarStream:
+    """Envuelve stdout: escribe los mensajes completos por encima de la barra."""
+    def __init__(self, stream, bar):
+        self.stream, self.bar, self.pending = stream, bar, ''
+
+    def write(self, text):
+        with self.bar.lock:
+            self.pending += text
+            if '\n' not in self.pending:
+                return len(text)
+            lines, self.pending = self.pending.rsplit('\n', 1)
+            self.bar._clear()
+            self.stream.write(lines + '\n')
+            self.bar._draw()
+        return len(text)
+
+    def flush(self):
+        self.stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+class ProgressBar:
+    """Barra al pie de la terminal: avance, tiempo, ETA y llamada en curso."""
+    SPINNER = '|/-\\'
+
+    def __init__(self, total: int, label: str, stream=None):
+        self.total, self.label = max(total, 0), label
+        self.stream = stream or sys.stdout
+        self.enabled = bool(getattr(self.stream, 'isatty', lambda: False)()) and self.total > 0
+        encoding = (getattr(self.stream, 'encoding', '') or '').lower()
+        self.fill, self.empty = ('█', '░') if 'utf' in encoding else ('#', '-')
+        self.done, self.current = 0, ''
+        self.lock = threading.RLock()
+        self.started = self.call_started = time.monotonic()
+        self.tick = 0
+        self._stop = threading.Event()
+        self._thread = None
+        self._saved_stdout = None
+
+    # --- ciclo de vida
+    def __enter__(self):
+        if self.enabled:
+            self._saved_stdout = sys.stdout
+            sys.stdout = _BarStream(self.stream, self)
+            self._thread = threading.Thread(target=self._refresh, daemon=True)
+            self._thread.start()
+            with self.lock:
+                self._draw()
+        return self
+
+    def __exit__(self, *exc):
+        if not self.enabled:
+            return False
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1)
+        with self.lock:
+            pending = sys.stdout.pending if isinstance(sys.stdout, _BarStream) else ''
+            sys.stdout = self._saved_stdout
+            self._clear()
+            if pending:
+                self.stream.write(pending + '\n')
+            elapsed = _fmt_time(time.monotonic() - self.started)
+            self.stream.write(f"[PROGRESO] {self.done}/{self.total} campos en {elapsed}\n")
+            self.stream.flush()
+        return False
+
+    # --- eventos de la traduccion
+    def begin(self, kind: str, text: str):
+        with self.lock:
+            preview = ' '.join(str(text).split())
+            self.current = f"{kind}: {preview}"
+            self.call_started = time.monotonic()
+            self._redraw()
+
+    def advance(self):
+        with self.lock:
+            self.done = min(self.done + 1, self.total)
+            self.current = ''
+            self._redraw()
+
+    # --- dibujo
+    def _refresh(self):
+        while not self._stop.wait(0.25):
+            with self.lock:
+                self.tick += 1
+                self._redraw()
+
+    def _redraw(self):
+        if self.enabled:
+            self._clear()
+            self._draw()
+
+    def line(self, width: int) -> str:
+        now = time.monotonic()
+        elapsed = now - self.started
+        pct = self.done / self.total if self.total else 1
+        eta = elapsed / self.done * (self.total - self.done) if self.done else None
+        spin = self.SPINNER[self.tick % len(self.SPINNER)]
+        stats = (f" {self.done}/{self.total} {pct:4.0%}  {_fmt_time(elapsed)}"
+                 f"  ETA {_fmt_time(eta) if eta is not None else '--:--'}")
+        call = (f"  {spin} {_fmt_time(now - self.call_started)} {self.current}"
+                if self.current else '')
+        bar_width = max(10, min(30, width - len(stats) - 20))
+        filled = int(bar_width * pct)
+        text = f"[{self.fill * filled}{self.empty * (bar_width - filled)}]{stats}{call}"
+        return text[:max(1, width - 1)]
+
+    def _width(self) -> int:
+        return shutil.get_terminal_size((100, 20)).columns
+
+    def _clear(self):
+        if self.enabled:
+            self.stream.write('\r' + ' ' * (self._width() - 1) + '\r')
+
+    def _draw(self):
+        if self.enabled:
+            self.stream.write(self.line(self._width()))
+            self.stream.flush()
+
+
 def _translate_custom_content(content, t):
     """Contenido de una seccion nueva: mismas formas que acepta `custom_entries`.
 
@@ -1595,7 +1756,28 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
     Las claves `clave(Titulo)` se traducen solo dentro del parentesis; las
     secciones nuevas traducen su titulo (la clave, si no hay parentesis) y su
     contenido.
+
+    Antes de llamar al modelo se hace una pasada en seco que solo cuenta los
+    campos (sin modelo ni salida), para que la barra de progreso conozca el total.
     """
+    global _FIELD_HOOK
+    validate_ui(data)
+    counter = _FieldCounter()
+    _FIELD_HOOK = counter
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            _translate_document(data, target_lang)
+    finally:
+        _FIELD_HOOK = None
+    with ProgressBar(counter.count, f"Traduciendo con {OLLAMA_MODEL}") as bar:
+        _FIELD_HOOK = bar
+        try:
+            return _translate_document(data, target_lang)
+        finally:
+            _FIELD_HOOK = None
+
+
+def _translate_document(data: dict, target_lang: str) -> dict:
     validate_ui(data)
     layout, known, custom = [], {}, {}
     for raw_key, value in data.items():
@@ -1613,7 +1795,7 @@ def translate_cv_data(data: dict, target_lang: str) -> dict:
 
     def t(text, kind='short'):
         if not text or not isinstance(text, str): return text
-        return translate_text(text, target_lang, kind)
+        return _translate_field(text, target_lang, kind)
 
     out = {}
     for entry in layout:
@@ -1639,7 +1821,7 @@ def _translate_known_sections(data: dict, target_lang: str) -> dict:
 
     def t(text: str, kind: str = 'short') -> str:
         if not text or not isinstance(text, str): return text
-        return translate_text(text, target_lang, kind)
+        return _translate_field(text, target_lang, kind)
 
     print(f"--- Iniciando traducción del CV completo a '{target_lang}' ---")
 
